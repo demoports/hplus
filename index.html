@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>hplus by halcyon</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* the intro renders 320x240; it is fitted to the window with whole pixels (no smoothing) */
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block;
+           image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity .8s ease; }
+  #ui { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; user-select: none; color: #bcd;
+        font: 13px/1.7 sans-serif; letter-spacing: .06em;
+        background: radial-gradient(ellipse at center, rgba(0,0,0,.6) 0%, rgba(0,0,0,.85) 65%, rgba(0,0,0,.96) 100%);
+        transition: opacity .6s ease; }
+  #ui.hidden { opacity: 0; pointer-events: none; }
+  #ui h1 { margin: 0; font-weight: 300; font-size: clamp(48px, 9vw, 120px); line-height: 1; letter-spacing: .08em; color: #fff; }
+  #ui .by { margin-top: 14px; font-size: 15px; color: #e6f0ff; letter-spacing: .25em; text-transform: lowercase; }
+  #ui .meta { margin-top: 4px; color: #7f9ab8; }
+  #ui .credits { margin-top: 22px; color: #6d86a6; font-size: 12px; text-align: center; }
+  #ui .credits b { color: #9fb6d4; font-weight: 400; }
+  #ui .row { margin-top: 38px; display: flex; gap: 12px; align-items: center; }
+  #ui button {
+    font: inherit; letter-spacing: .18em; text-transform: uppercase; cursor: pointer; outline: none;
+    color: #cdd9ee; background: none; border: none; padding: 6px 2px;
+    text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 1px;
+    transition: color .2s; }
+  #ui button:hover, #ui button:focus-visible { color: #fff; }
+  #ui .keys { position: absolute; bottom: 22px; color: #4f6784; font-size: 11px; letter-spacing: .2em; text-decoration: none; transition: color .2s; }
+  #ui .keys:hover { color: #9fb6d4; }
+  #status { position: absolute; left: 14px; bottom: 12px; color: #567; font: 11px sans-serif; letter-spacing: .1em; }
+  #status:empty { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>hplus</h1>
+  <div class="by">halcyon</div>
+  <div class="meta">64k intro · the party 1998</div>
+  <div class="credits"><b>blitz</b> · <b>ren</b> · <b>shrine</b> · <b>ember</b> · <b>placidity</b> · <b>croaker</b><br>music <b>brothomstates</b> &nbsp;·&nbsp; player <b>digisnap / matrix</b></div>
+  <div class="row"><button id="go" type="button">start</button></div>
+  <a class="keys" href="https://github.com/mrdoob/hplus" target="_blank" rel="noopener">github</a>
+</div>
+<div id="status"></div>
+<script src="hplus_data.js"></script>
+<script src="hplus_core.js"></script>
+<script src="hplus_engine.js"></script>
+<script src="hplus_player.js"></script>
+<script src="hplus_sound.js"></script>
+<script src="hplus_fxA.js"></script>
+<script src="hplus_fxB.js"></script>
+<script src="hplus_fxC.js"></script>
+<script src="hplus_fxD.js"></script>
+<script src="hplus_fxE.js"></script>
+<script src="hplus_fxF.js"></script>
+<script src="hplus_main.js"></script>
+<script src="hplus.js"></script>
+<script>
+  const canvas = document.getElementById('c'), ui = document.getElementById('ui'), statusEl = document.getElementById('status');
+  const setStatus = (s) => { statusEl.textContent = s; };
+  let app = null;
+
+  // launcher background: a frame of the intro (part A, ~21 s into the music), rendered live by the port
+  function showLauncher() {
+    ui.classList.remove('hidden');
+    HP.preview(canvas, 21, () => { if (!app) canvas.style.opacity = '1'; });
+  }
+
+  function begin() {
+    if (app) return;
+    ui.classList.add('hidden');
+    const q = new URLSearchParams(location.search);   // ?fps=60 display cap, ?dfps=30 frame rate of the tunnel part
+    app = HP.start(canvas, setStatus, {
+      maxFps: +q.get('fps') || 60, dFps: +q.get('dfps') || 30,
+      onStart: () => { canvas.style.opacity = '1'; lockScreen(); },
+      onEnd: () => { app = null; unlockScreen(); showLauncher(); } });
+  }
+  function stop() { if (!app) return; app.stop(); app = null; unlockScreen(); setStatus(''); showLauncher(); }
+  let flashTimer = null;
+  function flash(text) {               // transient status line (e.g. the time after seeking)
+    setStatus(text); clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { if (statusEl.textContent === text) setStatus(''); }, 1200);
+  }
+  const mmss = (t) => { t = Math.round(t); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+  let wakeLock = null;
+  async function lockScreen() { if (!('wakeLock' in navigator)) return; try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch (e) { wakeLock = null; } }
+  function unlockScreen() { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } }
+  document.addEventListener('visibilitychange', () => { if (app && document.visibilityState === 'visible' && !wakeLock) lockScreen(); });
+  document.getElementById('go').addEventListener('click', begin);   // only the start button starts (or Enter / Space)
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') stop();
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && app) {
+      e.preventDefault();
+      const t = app.seek(e.key === 'ArrowLeft' ? -5 : 5);
+      flash((e.key === 'ArrowLeft' ? '◀ ' : '▶ ') + mmss(t));
+    }
+    if ((e.key === 'Enter' || e.key === ' ') && !app) { e.preventDefault(); begin(); }
+    else if (e.key === ' ' && app) { e.preventDefault(); app.pause(); }
+    if (e.key === 'f' && document.fullscreenEnabled) { if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
+    if (e.key === '`' && app) app.fps();
+  });
+  showLauncher();
+</script>
+</body>
+</html>
