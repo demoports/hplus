@@ -1,4 +1,4 @@
-# hplus (browser port)
+# hplus (canvas2d port)
 
 A JavaScript port of **hplus** by halcyon (64k intro, The Party 1998), reconstructed
 by unpacking and disassembling `HPLUS.EXE`. The .nfo credits the intro to blitz, ren, shrine, ember,
