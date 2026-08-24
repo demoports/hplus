@@ -16,11 +16,13 @@ Files:
 | `hplus_sound.js` | glue between the memory image and the player |
 | `hplus_fxA.js` … `hplus_fxF.js` | the six parts of the intro |
 | `hplus_main.js` | startup (table building, module decryption, precalcs), the part sequencer, the object loader's data-stream callback |
-| `hplus_data.js` | the intro's data (the WWPACK-unpacked 32-bit image of `HPLUS.EXE`), gzip + base64 — the page needs no DOS exe or unpacker at runtime, and works from `file://` |
+| `hplus_data.js` | the intro's data (the WWPACK-unpacked 32-bit image of `HPLUS.EXE`), gzip + base64 — the page needs no DOS exe or unpacker at runtime |
 | `notes/` | conventions of the port and the reverse-engineering notes of each subsystem (engine, player, parts B–F) |
 | `tools/` | the unpacker/disassembler/emulator/validation scripts (Python + Unicorn/Capstone, node) |
 
-Works from `file://` (the data is embedded and unzipped with `DecompressionStream`); needs WebAudio and a 2D canvas. Runs at the display
+The sources are ES modules (`index.html` imports `hplus.js`, which pulls in the rest), so the page has to be
+served over http(s) — `python3 -m http.server` in this directory, then <http://localhost:8000/> — rather than
+opened from `file://`. Needs WebAudio and a 2D canvas. Runs at the display
 refresh rate (capped at 60 fps, `?fps=`); like the original, the parts step their animation in 14 ms
 units per presented frame. The one exception is the ray-cast tunnel (part D), which the original
 advances a fixed three steps per frame — its speed is the frame rate of the machine — so the port

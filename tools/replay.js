@@ -15,7 +15,7 @@ const POSNEXT = args.includes('--posnext');   // song position for the update/ex
 const DUMP = opt('--dump', null) ? opt('--dump', null).split(',').map(Number) : [];   // frames at which to dump M (mysnapNNNNN.bin) + the alloc map
 if (OUT) fs.mkdirSync(OUT, { recursive: true });
 
-require('./hplus_core.js');
+globalThis.HP = require('./hplus_core.js').HP;   // the port is ES modules; the tools stay CommonJS
 const READLOG = opt('--readlog', null);   // binary log of (site, frame, order, row, tick) at every [0xe20] read of the original
 let RL = null, rlIdx = 0, rlFed = 0, rlSkipped = 0;
 if (READLOG) {
@@ -76,7 +76,7 @@ const frames = fs.readFileSync(path.join(refdir, 'frames.jsonl'), 'utf8').trim()
 const byFrame = new Map(frames.map(f => [f.frame, f]));
 
 // memory + present hook
-const image = HP.loadImageNode(path.join(__dirname, 'image32.bin'));
+const image = new Uint8Array(fs.readFileSync(path.join(__dirname, 'image32.bin')));
 HP.init(image);
 let presented = null;   // {buf offset}
 HP.videoOut = function (bufOff, page) { presented = bufOff; };   // the engine's present calls HP.videoOut(bufferOffset, page)

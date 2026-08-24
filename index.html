@@ -46,23 +46,17 @@
   <a class="keys" href="https://github.com/demoports/hplus" target="_blank" rel="noopener">github</a>
 </div>
 <div id="status"></div>
-<script src="hplus_data.js"></script>
-<script src="hplus_core.js"></script>
-<script src="hplus_engine.js"></script>
-<script src="hplus_player.js"></script>
-<script src="hplus_sound.js"></script>
-<script src="hplus_fxA.js"></script>
-<script src="hplus_fxB.js"></script>
-<script src="hplus_fxC.js"></script>
-<script src="hplus_fxD.js"></script>
-<script src="hplus_fxE.js"></script>
-<script src="hplus_fxF.js"></script>
-<script src="hplus_main.js"></script>
-<script src="hplus.js"></script>
-<script>
+<script type="module">
+  import { HP } from './hplus.js';
+
   const canvas = document.getElementById('c'), ui = document.getElementById('ui'), statusEl = document.getElementById('status');
   const setStatus = (s) => { statusEl.textContent = s; };
   let app = null;
+
+  // module scope is not global: expose what the devtools console and the
+  // harnesses in tools/ (browser_test.js, seek_test.js) reach for.
+  window.HP = HP;
+  Object.defineProperty(window, 'app', { get: () => app });
 
   // launcher background: a frame of the intro (part A, ~21 s into the music), rendered live by the port
   function showLauncher() {

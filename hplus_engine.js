@@ -7,9 +7,9 @@
 //   HP.fn_e27a (main's procedural texture generator callback, installed at [0x2438a]; called as
 //               HP.callTexGen(bh, bl, ecx, edx, ebx, edi) — see fn_2438e),
 //   HP.fn_2c1e6 (DOS print — part 4), HP.fn_2c845 (video init — part 4).
-(function (root) {
-  'use strict';
-  const HP = root.HP;
+import { HP } from './hplus_core.js';
+
+(function () {
   const { rd8, rds8, rd16, rds16, rd32, rds32, wr8, wr16, wr32, rdf, wrf, roundHalfEven, mulhi } = HP;
   const F = Math.fround;
   const rne = roundHalfEven;       // fist/fistp with RC=nearest (outside the draw loop)
@@ -509,11 +509,9 @@
       t += step;
     }
   };
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+})();
 // hplus port — engine part 2: per-frame pipeline (fn_2a2ac render scene + everything it calls except drawing).
-(function (root) {
-  'use strict';
-  const HP = root.HP;
+(function () {
   const { rd8, rd16, rd32, rds32, wr8, wr16, wr32, rdf, wrf, roundHalfEven } = HP;
   const F = Math.fround;
   const rne = roundHalfEven;
@@ -995,14 +993,12 @@
       if ((rd32(esi) & 0x80) && rd32(esi + 0x34) === 0xffffffff) HP.fn_27ee5(esi);
     }
   };
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+})();
 // hplus port — engine part 3: drawing (fn_2a7d0 sort+dispatch, item handlers, screen-space clipping,
 // flat / perspective-correct textured fillers, AA additive line drawer, particle sprites).
 // NOTE: the original sets the x87 rounding mode to TRUNCATE for the whole of fn_2a7d0, so every
 // fist/fistp here is Math.trunc.
-(function (root) {
-  'use strict';
-  const HP = root.HP;
+(function () {
   const { rd8, rd16, rd32, rds32, wr8, wr16, wr32, rdf } = HP;
   const F = Math.fround;
   const tr = HP.truncInt;                 // fistp under RC=truncate (NaN/overflow -> 0x80000000)
@@ -1664,12 +1660,10 @@
       wr32(0x28a60, rows - 1);
     }
   };
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+})();
 // hplus port — engine part 4: camera spline + walker, debug camera, present (fn_2b0a8) with FPS overlay,
 // text printing, video layer (fn_2c845 mode init, fn_2c9f4 present -> HP.videoOut), DOS print, misc.
-(function (root) {
-  'use strict';
-  const HP = root.HP;
+(function () {
   const { rd8, rd16, rds16, rd32, rds32, wr8, wr16, wr32, rdf, wrf, roundHalfEven } = HP;
   const F = Math.fround;
   const rne = roundHalfEven;
@@ -1968,4 +1962,4 @@
     if (HP.dosPrint) HP.dosPrint(s);
   };
   HP.dosPrint = (s) => { if (typeof console !== 'undefined') console.log('[DOS] ' + JSON.stringify(s)); };
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+})();

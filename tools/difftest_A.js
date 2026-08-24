@@ -1,10 +1,10 @@
 // node difftest_A.js [DIR]  — run captured (before, regs) -> (after) pairs through the JS port of part A's functions
 'use strict';
 const fs = require('fs'), zlib = require('zlib'), path = require('path');
-require('./hplus_core.js'); require('./hplus_main.js'); require('./hplus_fxA.js');
+globalThis.HP = require('./hplus_core.js').HP; require('./hplus_main.js'); require('./hplus_fxA.js');
 const HP = globalThis.HP;
 const DIR = process.argv[2] || 'fxA_tests';
-const image = HP.loadImageNode('image32.bin');
+const image = new Uint8Array(fs.readFileSync('image32.bin'));
 const CALL = {
   0x1545e: r => HP.fn_1545e(r.edx, r.ebp, r.esi, r.edi),
   0x15508: r => HP.fn_15508(r.edx, r.ebp, r.edi),

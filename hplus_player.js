@@ -12,8 +12,6 @@
 //   p.position()                    // {order,row,tick,frames,...}
 // The first rendered frame is the single silent frame the original emits before tick 1
 // (the original additionally plays 5512 frames of 0x8080 fill before that; see notes).
-(function (root) {
-'use strict';
 
 const MOD = 0x1090;           // module offset (same as in the original image)
 const S   = 0x10000;          // player state block (0x3740 bytes)
@@ -946,7 +944,4 @@ function create(moduleBytes, opts) {
 // module location inside the intro's 32-bit image (image32.bin / selector 08 base)
 const MODULE_OFFSET = 0x1090, MODULE_SIZE = 0xbc08;
 function extractModule(image32) { return decrypt(image32.subarray(MODULE_OFFSET, MODULE_OFFSET + MODULE_SIZE)); }
-const HPlusPlayer = { create, decrypt, extractModule, MODULE_OFFSET, MODULE_SIZE, RATE, MOD, S, D };
-if (typeof module !== 'undefined' && module.exports) module.exports = HPlusPlayer;
-else root.HPlusPlayer = HPlusPlayer;
-})(typeof self !== 'undefined' ? self : this);
+export const HPlusPlayer = { create, decrypt, extractModule, MODULE_OFFSET, MODULE_SIZE, RATE, MOD, S, D };
