@@ -8,6 +8,14 @@
 //               HP.callTexGen(bh, bl, ecx, edx, ebx, edi) — see fn_2438e),
 //   HP.fn_2c1e6 (DOS print — part 4), HP.fn_2c845 (video init — part 4).
 import { HP } from './hplus_core.js';
+import { ADDR } from './hplus_addr.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const alloc          = (...a) => HP.fn_29a(...a);     // core: fn_29a — high memory
+const himemFree      = (...a) => HP.fn_2c2(...a);     // core: fn_2c2
+const rand           = (...a) => HP.fn_2c2c8(...a);   // core: fn_2c2c8 — eax = range
+const texGenCallback = (...a) => HP.fn_e27a(...a);    // main: fn_e27a — procedural texture generator callback
 
 (function () {
   const { rd8, rds8, rd16, rds16, rd32, rds32, wr8, wr16, wr32, rdf, wrf, roundHalfEven, mulhi } = HP;
@@ -89,7 +97,7 @@ import { HP } from './hplus_core.js';
 
   // ------------------------------------------------------------ fast inverse sqrt (0x23f34 table, 0x23f8c)
   HP.fn_23f34 = function () {
-    const p = (HP.fn_29a(0x8010) | 0xf) + 1;
+    const p = (alloc(0x8010) | 0xf) + 1;
     wr32(0x23f30, p);
     for (let i = 0; i < 0x2000; i++) {
       const bits = ((i << 11) | 0x3f000000) >>> 0;
@@ -142,10 +150,10 @@ import { HP } from './hplus_core.js';
       const ny = F(-((rdf(edx + 4) - rdf(ebx + 4)) * (rdf(esi + 0xc) - rdf(ebx + 0xc)) - (rdf(esi + 4) - rdf(ebx + 4)) * (rdf(edx + 0xc) - rdf(ebx + 0xc))));
       const nz = F((rdf(edx + 4) - rdf(ebx + 4)) * (rdf(esi + 8) - rdf(ebx + 8)) - (rdf(esi + 4) - rdf(ebx + 4)) * (rdf(edx + 8) - rdf(ebx + 8)));
       wrf(0x28e78, nx); wrf(0x28e7c, ny); wrf(0x28e80, nz);
-      wrf(0x28e40, nx * nx + ny * ny + nz * nz);
-      wr32(0x28e40, HP.fn_23f8c(rd32(0x28e40)));
-      const r = rdf(0x28e40);
-      wr32(0x28e40, 0xff);
+      wrf(ADDR.tmpF, nx * nx + ny * ny + nz * nz);
+      wr32(ADDR.tmpF, HP.fn_23f8c(rd32(ADDR.tmpF)));
+      const r = rdf(ADDR.tmpF);
+      wr32(ADDR.tmpF, 0xff);
       const k = r * 255;                 // fimul 255 (int); stays on the x87 stack (unrounded)
       const px = nx * k;                 // fst [edi+0x18] rounds; the additions use the unrounded product
       wrf(edi + 0x18, px); wrf(ebx + 0x20, rdf(ebx + 0x20) + px); wrf(edx + 0x20, rdf(edx + 0x20) + px); wrf(esi + 0x20, rdf(esi + 0x20) + px);
@@ -165,33 +173,33 @@ import { HP } from './hplus_core.js';
   HP.fn_241be = function (ebp) {   // bounding box center -> ebp+8.., re-center vertices
     let edi = rd32(ebp + 0x34), ecx = rd32(ebp + 0x2c);
     let minx = rdf(edi + 4), maxx = minx, miny = rdf(edi + 8), maxy = miny, minz = rdf(edi + 0xc), maxz = minz;
-    wrf(0x23fb8, minx); wrf(0x23fbc, minx); wrf(0x23fc0, miny); wrf(0x23fc4, miny); wrf(0x23fc8, minz); wrf(0x23fcc, minz);
+    wrf(ADDR.bboxMinX, minx); wrf(0x23fbc, minx); wrf(0x23fc0, miny); wrf(0x23fc4, miny); wrf(0x23fc8, minz); wrf(0x23fcc, minz);
     for (; ecx > 0; ecx--, edi += 0x3c) {
       const x = rdf(edi + 4), y = rdf(edi + 8), z = rdf(edi + 0xc);
-      if (!(minx >= x)) { minx = x; wrf(0x23fb8, x); }      // jae: if min >= x keep else store
+      if (!(minx >= x)) { minx = x; wrf(ADDR.bboxMinX, x); }      // jae: if min >= x keep else store
       if (!(maxx <= x)) { maxx = x; wrf(0x23fbc, x); }
       if (!(miny >= y)) { miny = y; wrf(0x23fc0, y); }
       if (!(maxy <= y)) { maxy = y; wrf(0x23fc4, y); }
       if (!(minz >= z)) { minz = z; wrf(0x23fc8, z); }
       if (!(maxz <= z)) { maxz = z; wrf(0x23fcc, z); }
     }
-    wrf(ebp + 8, (rdf(0x23fb8) + rdf(0x23fbc)) / rdf(0x28e68));
-    wrf(ebp + 0xc, (rdf(0x23fc0) + rdf(0x23fc4)) / rdf(0x28e68));
-    wrf(ebp + 0x10, (rdf(0x23fc8) + rdf(0x23fcc)) / rdf(0x28e68));
+    wrf(ebp + 8, (rdf(ADDR.bboxMinX) + rdf(0x23fbc)) / rdf(ADDR.const2));
+    wrf(ebp + 0xc, (rdf(0x23fc0) + rdf(0x23fc4)) / rdf(ADDR.const2));
+    wrf(ebp + 0x10, (rdf(0x23fc8) + rdf(0x23fcc)) / rdf(ADDR.const2));
     edi = rd32(ebp + 0x34); ecx = rd32(ebp + 0x2c);
     for (; ecx > 0; ecx--, edi += 0x3c) {
       wrf(edi + 4, rdf(edi + 4) - rdf(ebp + 8)); wrf(edi + 8, rdf(edi + 8) - rdf(ebp + 0xc)); wrf(edi + 0xc, rdf(edi + 0xc) - rdf(ebp + 0x10));
     }
   };
   HP.fn_242e3 = function (ebp) {   // bounding radius -> ebp+0x20
-    wrf(0x23fb8, 0);
+    wrf(ADDR.bboxMinX, 0);
     let edi = rd32(ebp + 0x34), ecx = rd32(ebp + 0x2c), m = 0;
     for (; ecx > 0; ecx--, edi += 0x3c) {
       const x = rdf(edi + 4), y = rdf(edi + 8), z = rdf(edi + 0xc);
       const d = x * x + y * y + z * z;
-      if (!(m >= d)) { m = d; wrf(0x23fb8, d); }
+      if (!(m >= d)) { m = d; wrf(ADDR.bboxMinX, d); }
     }
-    wrf(ebp + 0x20, Math.sqrt(rdf(0x23fb8)));
+    wrf(ebp + 0x20, Math.sqrt(rdf(ADDR.bboxMinX)));
   };
 
   // ------------------------------------------------------------ textures
@@ -200,9 +208,9 @@ import { HP } from './hplus_core.js';
   // [0x2436b..0x24377]: 13-byte texture descriptor (copied from the scene data), [0x24378] = its last dword,
   // [0x2437c]/[0x2437e] = w/h words (part of the descriptor), [0x24382] = palette alloc ptr, [0x24386] = pixel alloc ptr
   HP.callTexGen = function (bh, bl, ecx, edx, ebx, edi) {
-    // calls main's generator [0x2438a]; only 0xe27a exists. The port provides HP.fn_e27a(regs) -> regs.
+    // calls main's generator [0x2438a]; only 0xe27a exists. The port provides texGenCallback(regs) -> regs.
     if (!HP.fn_e27a) throw new Error('HP.fn_e27a (texture generator) not installed');
-    return HP.fn_e27a({ bh, bl, ecx, edx, ebx, edi });
+    return texGenCallback({ bh, bl, ecx, edx, ebx, edi });
   };
   HP.fn_2438e = function (ebp) {   // create texture entry in scene ebp from descriptor at 0x2436b
     const n = rd32(ebp + 0x64);
@@ -216,8 +224,8 @@ import { HP } from './hplus_core.js';
     const pix = rd32(0x24386);
     wr32(ebp + 0xc, pix); wr32(ebp + 0x10, pix + 0x10000);
     wr32(0x24386, pix + 0x50000);
-    wrf(ebp, rds16(0x2437c) - rdf(0x28e64));
-    wrf(ebp + 4, rds16(0x2437e) - rdf(0x28e64));
+    wrf(ebp, rds16(0x2437c) - rdf(ADDR.const1));
+    wrf(ebp + 4, rds16(0x2437e) - rdf(ADDR.const1));
     const w = rd16(0x2437c), h = rd16(0x2437e);
     // per row (0x24435..0x24478): the generator callback fills w bytes at the row start (ecx=w, edx=row ptr, bh=0:
     // continue the stream), then the row is replicated across 256 bytes; finally the h rows are replicated down to 256
@@ -235,8 +243,8 @@ import { HP } from './hplus_core.js';
     }
   };
   HP.fn_2432c = function (edx, ebp) {   // create one texture from descriptor at edx (allocs palette/pixel pools)
-    wr32(0x24382, (HP.fn_29a(0x310) | 0xf) + 1);
-    wr32(0x24386, (HP.fn_29a(0x60000) | 0xffff) + 1);
+    wr32(0x24382, (alloc(0x310) | 0xf) + 1);
+    wr32(0x24386, (alloc(0x60000) | 0xffff) + 1);
     HP.copy(0x2436b, edx, 0xd);
     wr32(ebp + 0x5c, rd32(ebp + 0x5c) + 1);
     HP.fn_2438e(ebp);
@@ -312,7 +320,7 @@ import { HP } from './hplus_core.js';
         let nv = rd16(esi); wr32(ob + 0x2c, nv);
         if (rd32(ob + 4) & 1) wr32(0x244e8, nv);
         esi += 2;
-        let p = (HP.fn_29a(nv * 0x3c + 0x10) | 0xf) + 1;
+        let p = (alloc(nv * 0x3c + 0x10) | 0xf) + 1;
         wr32(ob + 0x34, p); HP.fill8(p, 0, nv * 0x3c + 0x10);
         for (let edi = p, c = nv; c > 0; c--, edi += 0x3c) {
           let r = rdPos(esi); wrf(edi + 4, r.v); esi = r.esi;
@@ -322,7 +330,7 @@ import { HP } from './hplus_core.js';
         let nf = rd16(esi); wr32(ob + 0x30, nf);
         if (rd32(ob + 4) & 1) wr32(0x244e4, nf);
         esi += 2;
-        let fp = (HP.fn_29a(nf * 0x10 + 0x10) | 0xf) + 1;
+        let fp = (alloc(nf * 0x10 + 0x10) | 0xf) + 1;
         wr32(ob + 0x38, fp); HP.fill8(fp, 0, nf * 0x10 + 0x10);
         const lflags = rd32(0x29050) & 0x100;
         for (let edi = fp, c = nf; c > 0; c--, edi += 0x10) {
@@ -347,8 +355,8 @@ import { HP } from './hplus_core.js';
       if (rd32(esi) === 0x72747854) {         // 'Txtr'
         esi += 4;
         let edx = rd16(esi); esi += 2;
-        wr32(0x24382, (HP.fn_29a(edx * 0x300 + 0x10) | 0xf) + 1);
-        wr32(0x24386, (HP.fn_29a(edx * 0x50000 + 0x10000) | 0xffff) + 1);
+        wr32(0x24382, (alloc(edx * 0x300 + 0x10) | 0xf) + 1);
+        wr32(0x24386, (alloc(edx * 0x50000 + 0x10000) | 0xffff) + 1);
         for (; edx > 0; edx--) {
           HP.copy(0x2436b, esi, 0xd); esi += 0xd;
           HP.fn_2438e(rd32(0x244ec));
@@ -357,7 +365,7 @@ import { HP } from './hplus_core.js';
       let nv = rd16(esi); wr32(ob + 0x2c, nv);
       if (rd32(ob + 4) & 1) wr32(0x244e8, nv);
       esi += 2;
-      let p = (HP.fn_29a(nv * 0x3c + 0x10) | 0xf) + 1;
+      let p = (alloc(nv * 0x3c + 0x10) | 0xf) + 1;
       wr32(ob + 0x34, p); HP.fill8(p, 0, nv * 0x3c + 0x10);
       for (let edi = p, c = nv; c > 0; c--, edi += 0x3c) {
         let r = rdPos(esi); wrf(edi + 4, r.v); esi = r.esi;
@@ -374,7 +382,7 @@ import { HP } from './hplus_core.js';
       let nf = rd16(esi); wr32(ob + 0x30, nf);
       if (rd32(ob + 4) & 1) wr32(0x244e0, nf);
       esi += 2;
-      let fp = (HP.fn_29a(nf * 0x30 + 0x10) | 0xf) + 1;
+      let fp = (alloc(nf * 0x30 + 0x10) | 0xf) + 1;
       wr32(ob + 0x38, fp); HP.fill8(fp, 0, nf * 0x30 + 0x10);
       for (let edi = fp, c = nf; c > 0; c--, edi += 0x30) {
         wr32(edi, 0x2a92f); wr32(edi + 4, rd32(0x29058));
@@ -415,40 +423,40 @@ import { HP } from './hplus_core.js';
   HP.fn_286ec = function (ecx, edx, ebp, edi) {
     wr32(0x28e44, -edx | 0);
     for (let y = -edx; y < edx; y++) {
-      wr32(0x28e40, -ecx | 0);
+      wr32(ADDR.tmpF, -ecx | 0);
       for (let x = -ecx; x < ecx; x++) {
         const d = Math.sqrt(x * x + y * y);      // fild/fmul/fadd/fsqrt
-        wr32(0x28e48, ebp);
-        let v = d / (ebp / rdf(0x28e70));        // fild ebp; fdiv 4.0; fdivp st1 -> st1/st0
-        wr32(0x28e48, 0x11);
+        wr32(ADDR.tmpF2, ebp);
+        let v = d / (ebp / rdf(ADDR.const4));        // fild ebp; fdiv 4.0; fdivp st1 -> st1/st0
+        wr32(ADDR.tmpF2, 0x11);
         v = -v + 0x11;                           // fchs; fild 17; faddp
-        wrf(0x28e48, v);                         // fst (float32)
-        if (rd32(0x28e48) & 0x80000000) v = 0;   // negative -> 0
-        wrf(0x28e50, v); wrf(0x28e48, v);
-        const vf = rdf(0x28e48);
+        wrf(ADDR.tmpF2, v);                         // fst (float32)
+        if (rd32(ADDR.tmpF2) & 0x80000000) v = 0;   // negative -> 0
+        wrf(0x28e50, v); wrf(ADDR.tmpF2, v);
+        const vf = rdf(ADDR.tmpF2);
         let t = v * v; t = t * t; t = t * vf;    // fmul st0; fmul st0; fmul [0x28e48] -> v^5
-        wr32(0x28e48, 0x9c40);
+        wr32(ADDR.tmpF2, 0x9c40);
         t = t / 0x9c40;                          // fild 40000; fdivp st1
-        t = t + rdf(0x28e50) / rdf(0x28e68);     // + v/2.0
-        t = t * rdf(0x28e70);                    // * 4.0
+        t = t + rdf(0x28e50) / rdf(ADDR.const2);     // + v/2.0
+        t = t * rdf(ADDR.const4);                    // * 4.0
         const ival = rne(t) | 0;
-        wr32(0x28e48, ival);
+        wr32(ADDR.tmpF2, ival);
         let eax = ival;
         if (eax <= 0) eax = 0;
         if (eax >= 0xff) eax = 0xff;
         wr8(edi, eax); edi++;
-        wr32(0x28e40, rd32(0x28e40) + 1);
+        wr32(ADDR.tmpF, rd32(ADDR.tmpF) + 1);
       }
       edi += 0x100 - 2 * ecx;
       wr32(0x28e44, rd32(0x28e44) + 1);
     }
   };
   HP.fn_28f4a = function () {      // engine init (called once at start)
-    wr32(0x28e54, HP.fn_2c2());
+    wr32(0x28e54, himemFree());
     // fninit (x87 defaults) — nothing to do
     HP.fn_2c500();
     HP.fn_23f34();
-    const p = (HP.fn_29a(0x30000) | 0xffff) + 1;
+    const p = (alloc(0x30000) | 0xffff) + 1;
     wr32(0x28e5c, p);
     HP.fn_286ec(0x80, 0x80, 0x20, p);
     HP.fn_286ec(0x40, 0x40, 0x10, p + 0x10000);
@@ -481,26 +489,26 @@ import { HP } from './hplus_core.js';
       wr32(0x24bfc, rd32(edx + 0x14));
       HP.fn_24c00(rd32(edx + 8), rd32(edx + 0x10), ebp);
     }
-    for (let i = 0; i < 0x11; i++) { wr32(0x28e40, i + 1); wrf(0x26994 + i * 4, 1 / (i + 1)); }
+    for (let i = 0; i < 0x11; i++) { wr32(ADDR.tmpF, i + 1); wrf(ADDR.recipTable + i * 4, 1 / (i + 1)); }
     const cnt = rd32(0x2908a);
     wr32(ebp + 0x68, cnt);
     if (cnt !== 0) {
       const sz = cnt * 0x2c;
-      const p = (HP.fn_29a(sz + 0x10) | 0xf) + 1;
+      const p = (alloc(sz + 0x10) | 0xf) + 1;
       wr32(ebp + 0x514, p);
       HP.fill8(p, 0, sz);
       let q = p;
       for (let i = 0; i < cnt; i++, q += 0x2c) {
         wr32(q, 0x2a86e);
-        let r = (HP.fn_2c2c8(0xc8) - 0x64) | 0; wr32(0x28e40, r); wrf(q + 4, r);
-        r = (HP.fn_2c2c8(0xc8) - 0x64) | 0; wr32(0x28e40, r); wrf(q + 8, r);
-        r = (HP.fn_2c2c8(0xc8) - 0x64) | 0; wr32(0x28e40, r); wrf(q + 0xc, r);
-        wr32(0x28e40, -12 >>> 0); wrf(q + 0x20, -12);
+        let r = (rand(0xc8) - 0x64) | 0; wr32(ADDR.tmpF, r); wrf(q + 4, r);
+        r = (rand(0xc8) - 0x64) | 0; wr32(ADDR.tmpF, r); wrf(q + 8, r);
+        r = (rand(0xc8) - 0x64) | 0; wr32(ADDR.tmpF, r); wrf(q + 0xc, r);
+        wr32(ADDR.tmpF, -12 >>> 0); wrf(q + 0x20, -12);
       }
     }
-    wr32(0x28e40, 0x100);
-    wrf(0x28e40, 1 / 256);
-    const step = rdf(0x28e40);
+    wr32(ADDR.tmpF, 0x100);
+    wrf(ADDR.tmpF, 1 / 256);
+    const step = rdf(ADDR.tmpF);
     let t = 0;
     for (let i = 0, edi = 0x29090; i < 0x100; i++, edi += 4) {
       let v = rd8(ebp + 0x30); wr32(0x2a090, v); v = rne(v * t); wr32(0x2a090, v); wr8(edi + 2, v);
@@ -528,19 +536,19 @@ import { HP } from './hplus_core.js';
     if (rd32(ebp + 0x60) !== 0) HP.fn_251e0(esi, ebp);
     const savedHeap = rd32(8);
     HP.fn_26230(ebp);
-    wr32(0x28e58, (rd32(0x28e54) - HP.fn_2c2()) >>> 0);
+    wr32(0x28e58, (rd32(0x28e54) - himemFree()) >>> 0);
     wr32(0x28808, rne(rdf(ebp + 4))); wrf(0x2880c, rdf(ebp + 4));
     wr32(0x2a240, rd32(ebp + 0x20));
     { const a = rdf(ebp + 0x10), b = rdf(ebp + 0x18);
       wr32(0x287f4, rne(b)); wrf(0x254e4, b); wr32(0x287f0, rne(a)); wrf(0x254e0, a); }
     { const a = rdf(ebp + 0x14), b = rdf(ebp + 0x1c);
       wr32(0x287fc, rne(b)); wrf(0x254ec, b); wr32(0x287f8, rne(a)); wrf(0x254e8, a); }
-    wrf(0x254f0, (rdf(ebp + 0x14) - rdf(ebp + 0x10)) / rdf(0x28e68) + rdf(ebp + 0x10));
-    wrf(0x254f4, (rdf(ebp + 0x1c) - rdf(ebp + 0x18)) / rdf(0x28e68) + rdf(ebp + 0x18));
-    { const a = rdf(0x254e8) - rdf(0x28e64), b = rdf(0x254ec) - rdf(0x28e64);
+    wrf(0x254f0, (rdf(ebp + 0x14) - rdf(ebp + 0x10)) / rdf(ADDR.const2) + rdf(ebp + 0x10));
+    wrf(0x254f4, (rdf(ebp + 0x1c) - rdf(ebp + 0x18)) / rdf(ADDR.const2) + rdf(ebp + 0x18));
+    { const a = rdf(0x254e8) - rdf(ADDR.const1), b = rdf(0x254ec) - rdf(ADDR.const1);
       wr32(0x28804, rne(b)); wrf(0x28034, b); wr32(0x28800, rne(a)); wrf(0x28030, a); }
-    wr32(0x2a238, rd32(0x25a18)); wr32(0x2a23c, rd32(0x25a1c));
-    wr32(0x2a230, 0); wr32(0x2a22c, 0);
+    wr32(ADDR.listAWrite, rd32(0x25a18)); wr32(ADDR.listBWrite, rd32(0x25a1c));
+    wr32(ADDR.drawItemCount, 0); wr32(0x2a22c, 0);
     wr32(0x25a20, rd32(0x25a10));
     let ecx = rd32(ebp + 0x60);
     if (ecx !== 0) {
@@ -549,9 +557,9 @@ import { HP } from './hplus_core.js';
         const fl = rd32(ob + 4);
         if (!(fl & 1) || !(fl & 2)) continue;
         wrf(0x24fa8, rdf(ob + 0x24));
-        wrf(0x24fb8, rds32(ob + 0x14) / rdf(0x268e0));
-        wrf(0x24fbc, rds32(ob + 0x18) / rdf(0x268e0));
-        wrf(0x24fc0, rds32(ob + 0x1c) / rdf(0x268e0));
+        wrf(0x24fb8, rds32(ob + 0x14) / rdf(ADDR.angle16Scale));
+        wrf(0x24fbc, rds32(ob + 0x18) / rdf(ADDR.angle16Scale));
+        wrf(0x24fc0, rds32(ob + 0x1c) / rdf(ADDR.angle16Scale));
         wrf(0x24fac, rdf(ob + 8)); wrf(0x24fb0, rdf(ob + 0xc)); wrf(0x24fb4, rdf(ob + 0x10));
         HP.fn_24fc4(0x24d50);
         HP.fn_2515e(0x24d50, rd32(0x2a248) + 0x24, 0x24d10);
@@ -561,7 +569,7 @@ import { HP } from './hplus_core.js';
       }
     }
     HP.fn_2a672();
-    wr32(ebp + 0x58, rd32(0x2a230)); wr32(ebp + 0x4c, rd32(0x2a22c));
+    wr32(ebp + 0x58, rd32(ADDR.drawItemCount)); wr32(ebp + 0x4c, rd32(0x2a22c));
     wr32(0x2a25c, 0); wr32(0x2a260, 0); wr32(0x2a264, 0);
     HP.fn_2a7d0(ebp);
     wr32(ebp + 0x48, rd32(0x2a25c)); wr32(ebp + 0x50, rd32(0x2a260)); wr32(ebp + 0x54, rd32(0x2a264));
@@ -570,8 +578,8 @@ import { HP } from './hplus_core.js';
 
   // ------------------------------------------------------------ fn_251e0(esi=camera, ebp=scene): frustum culling
   HP.fn_251e0 = function (esi, ebp) {
-    wrf(0x251c8, Math.atan2(rdf(ebp + 0x34), (rdf(ebp + 0x14) - rdf(ebp + 0x10)) / rdf(0x28e68)));
-    wrf(0x251cc, Math.atan2(rdf(0x28ea8), (rdf(ebp + 0x1c) - rdf(ebp + 0x18)) / rdf(0x28e68)));
+    wrf(0x251c8, Math.atan2(rdf(ebp + 0x34), (rdf(ebp + 0x14) - rdf(ebp + 0x10)) / rdf(ADDR.const2)));
+    wrf(0x251cc, Math.atan2(rdf(0x28ea8), (rdf(ebp + 0x1c) - rdf(ebp + 0x18)) / rdf(ADDR.const2)));
     wr32(0x251b0, rd32(ebp + 0x24));
     const big = rdf(0x251bc);
     wrf(0x251c0, big); wrf(0x251c4, -big);
@@ -588,32 +596,32 @@ import { HP } from './hplus_core.js';
       if (rd32(ob + 4) & 1) {
         do {
           wrf(0x251dc, rdf(ob + 0x20) * rdf(ob + 0x24));
-          wrf(0x251d0, rdf(0x28ea4) + rdf(0x251dc) - rdf(0x251b0));
-          if (sign(0x251d0)) break;
+          wrf(ADDR.cullTmp, rdf(0x28ea4) + rdf(0x251dc) - rdf(0x251b0));
+          if (sign(ADDR.cullTmp)) break;
           eax = 1;
           if (!sign(0x28e9c)) wrf(0x28e9c, -rdf(0x28e9c));
           {
             const x = rdf(0x28e9c), z = rdf(0x28ea4);
             const s = Math.sqrt(x * x + z * z);
             const ang = Math.atan2(z, x);
-            wrf(0x251d0, s * Math.sin(ang - rdf(0x251c8)) - rdf(0x251dc));
-            if (!sign(0x251d0)) { eax = 0; break; }
+            wrf(ADDR.cullTmp, s * Math.sin(ang - rdf(0x251c8)) - rdf(0x251dc));
+            if (!sign(ADDR.cullTmp)) { eax = 0; break; }
           }
           if (!sign(0x28ea0)) wrf(0x28ea0, -rdf(0x28ea0));
           {
             const y = rdf(0x28ea0), z = rdf(0x28ea4);
             const s = Math.sqrt(y * y + z * z);
             const ang = Math.atan2(z, y);
-            wrf(0x251d0, s * Math.sin(ang - rdf(0x251cc)) - rdf(0x251dc));
-            if (!sign(0x251d0)) { eax = 0; break; }
+            wrf(ADDR.cullTmp, s * Math.sin(ang - rdf(0x251cc)) - rdf(0x251dc));
+            if (!sign(ADDR.cullTmp)) { eax = 0; break; }
           }
           {
             const a = rdf(0x28ea4) - rdf(0x251dc);
-            wrf(0x251d0, a - rdf(0x251c0));
-            if (sign(0x251d0)) wrf(0x251c0, a);
+            wrf(ADDR.cullTmp, a - rdf(0x251c0));
+            if (sign(ADDR.cullTmp)) wrf(0x251c0, a);
             const b = rdf(0x28ea4) + rdf(0x251dc);
-            wrf(0x251d0, b - rdf(0x251c4));
-            if (!sign(0x251d0)) wrf(0x251c4, b);
+            wrf(ADDR.cullTmp, b - rdf(0x251c4));
+            if (!sign(ADDR.cullTmp)) wrf(0x251c4, b);
           }
           wr32(0x251d4, rd32(0x251d4) + rd32(ob + 0x30));
           wr32(0x251d8, rd32(0x251d8) + 1);
@@ -621,7 +629,7 @@ import { HP } from './hplus_core.js';
       }
       wr32(ob + 4, rd32(ob + 4) | (eax << 1));
     }
-    wrf(0x251b4, rdf(0x251b8));
+    wrf(0x251b4, rdf(ADDR.sortZScale));
     wr32(ebp + 0x44, rd32(0x251d8));
   };
 
@@ -638,8 +646,8 @@ import { HP } from './hplus_core.js';
       const X = ((x * m00 + y * m10) + z * m20) + m30;
       const Y = ((x * m01 + y * m11) + z * m21) + m31;
       const Z = ((x * m02 + y * m12) + z * m22) + m32;
-      wrf(0x251d0, near - Z);
-      const edx = sign(0x251d0) ? 0x10 : 0;
+      wrf(ADDR.cullTmp, near - Z);
+      const edx = sign(ADDR.cullTmp) ? 0x10 : 0;
       wr32(ebx, ((rd32(ebx) & 0xef) | edx) >>> 0);
       wrf(ebx + 0x18, Z); wrf(ebx + 0x10, X); wrf(ebx + 0x14, Y);
     }
@@ -658,10 +666,10 @@ import { HP } from './hplus_core.js';
       wrf(edi + 0x14, y); wrf(edi + 0x10, x); wrf(edi + 0x1c, w);
       wr32(edi, rd32(edi) & 0xf0);
       const Y = rdf(edi + 0x14), X = rdf(edi + 0x10);
-      wrf(0x268f4, Y - rdf(0x254e4)); wrf(0x251d0, rdf(0x254ec) - Y);
-      let eax = ((rd32(0x268f4) >>> 0x1c) & 8) | ((rd32(0x251d0) >>> 0x1d) & 4);
-      wrf(0x268f4, X - rdf(0x254e0)); wrf(0x251d0, rdf(0x254e8) - X);
-      eax |= ((rd32(0x268f4) >>> 0x1e) & 2) | (rd32(0x251d0) >>> 0x1f);
+      wrf(0x268f4, Y - rdf(0x254e4)); wrf(ADDR.cullTmp, rdf(0x254ec) - Y);
+      let eax = ((rd32(0x268f4) >>> 0x1c) & 8) | ((rd32(ADDR.cullTmp) >>> 0x1d) & 4);
+      wrf(0x268f4, X - rdf(0x254e0)); wrf(ADDR.cullTmp, rdf(0x254e8) - X);
+      eax |= ((rd32(0x268f4) >>> 0x1e) & 2) | (rd32(ADDR.cullTmp) >>> 0x1f);
       wr32(edi, rd32(edi) | eax);
     }
   };
@@ -671,9 +679,9 @@ import { HP } from './hplus_core.js';
   HP.fn_255e0 = function (ecx, edi) {
     const ebx = (rd32(ecx) >>> 4) & 1;
     if (ebx !== 1) {
-      HP.copy(rd32(0x2a23c), ecx, 0x3c);
+      HP.copy(rd32(ADDR.listBWrite), ecx, 0x3c);
       wr32(0x255dc, rd32(0x255dc) + 1);
-      wr32(0x2a23c, rd32(0x2a23c) + 0x3c);
+      wr32(ADDR.listBWrite, rd32(ADDR.listBWrite) + 0x3c);
     }
     const eax = (rd32(edi) >>> 4) & 1;
     if (eax === ebx) return;
@@ -682,7 +690,7 @@ import { HP } from './hplus_core.js';
     if (rd32(edi + 0x34) === 0xffffffff) HP.fn_27ffc(edi);
     const near = rdf(0x2a240);
     const t = (near - rdf(ecx + 0x18)) / (rdf(edi + 0x18) - rdf(ecx + 0x18));
-    const esi = rd32(0x2a23c);
+    const esi = rd32(ADDR.listBWrite);
     wr32(esi + 0x18, rd32(0x2a240)); wr32(esi + 0xc, rd32(0x2a240));
     const dx = rdf(edi + 0x10) - rdf(ecx + 0x10), dy = rdf(edi + 0x14) - rdf(ecx + 0x14);
     const y = dy * t + rdf(ecx + 0x14);
@@ -693,7 +701,7 @@ import { HP } from './hplus_core.js';
     wrf(esi + 0x30, (rdf(edi + 0x30) - rdf(ecx + 0x30)) * t + rdf(ecx + 0x30));
     wrf(esi + 0x34, (rdf(edi + 0x34) - rdf(ecx + 0x34)) * t + rdf(ecx + 0x34));
     wr32(esi, 0);
-    wr32(0x2a23c, rd32(0x2a23c) + 0x3c);
+    wr32(ADDR.listBWrite, rd32(ADDR.listBWrite) + 0x3c);
     wr32(0x255dc, rd32(0x255dc) + 1);
   };
   // fn_256c5(ebp=object): near-clip polygons -> new faces/vertices into the temp object lists
@@ -705,14 +713,14 @@ import { HP } from './hplus_core.js';
       const eax = (rd32(edx) & 0x10) + (rd32(esi) & 0x10) + (rd32(vp) & 0x10);
       if (eax === 0) continue;
       if ((eax >>> 4) !== 3) {
-        const startV = rd32(0x2a23c);
+        const startV = rd32(ADDR.listBWrite);
         wr32(0x255dc, 0);
         wr32(0x255d0, edx); wr32(0x255d4, esi); wr32(0x255d8, vp);
         HP.fn_255e0(edx, esi);
         HP.fn_255e0(rd32(0x255d4), rd32(0x255d8));
         HP.fn_255e0(rd32(0x255d8), rd32(0x255d0));
         wr32(0x2a29c, rd32(0x2a29c) + rd32(0x255dc));
-        let ebx = startV, fb = rd32(0x2a238);
+        let ebx = startV, fb = rd32(ADDR.listAWrite);
         let n = (rd32(0x255dc) - 2) | 0;
         for (; n !== 0; n--) {
           HP.copy(fb, edi, 0x30);
@@ -722,7 +730,7 @@ import { HP } from './hplus_core.js';
           wr32(0x2a2a0, rd32(0x2a2a0) + 1);
           fb += 0x30;
         }
-        wr32(0x2a238, fb);
+        wr32(ADDR.listAWrite, fb);
       }
       wr32(edi + 8, 0);
     }
@@ -736,7 +744,7 @@ import { HP } from './hplus_core.js';
       const eax = (rd32(edx) & 0x10) + (rd32(esi) & 0x10);
       if (eax === 0) continue;
       if ((eax >>> 4) !== 2 && rd32(esi + 0x18) !== rd32(edx + 0x18)) {
-        const ebx = rd32(0x2a23c);
+        const ebx = rd32(ADDR.listBWrite);
         if (rd32(edx) & 0x10) { const t = esi; esi = edx; edx = t; }
         const t = (rdf(0x2a240) - rdf(edx + 0x18)) / (rdf(esi + 0x18) - rdf(edx + 0x18));
         wr32(ebx + 0x18, rd32(0x2a240));
@@ -744,13 +752,13 @@ import { HP } from './hplus_core.js';
         wrf(ebx + 0x14, dy * t + rdf(edx + 0x14));
         wrf(ebx + 0x10, dx * t + rdf(edx + 0x10));
         wr32(ebx, 0);
-        wr32(0x2a23c, rd32(0x2a23c) + 0x3c);
+        wr32(ADDR.listBWrite, rd32(ADDR.listBWrite) + 0x3c);
         wr32(0x2a29c, rd32(0x2a29c) + 1); wr32(0x2a2a0, rd32(0x2a2a0) + 1);
-        const fb = rd32(0x2a238);
+        const fb = rd32(ADDR.listAWrite);
         HP.copy(fb, edi, 0x10);
         wr32(fb + 4, rd32(fb + 4) | 1);
         wr32(fb + 8, edx); wr32(fb + 0xc, ebx);
-        wr32(0x2a238, fb + 0x10);
+        wr32(ADDR.listAWrite, fb + 0x10);
       }
       wr32(edi + 4, rd32(edi + 4) & 0x7fe);
     }
@@ -778,9 +786,9 @@ import { HP } from './hplus_core.js';
     edi = rd32(ebp + 0x38); ecx = rd32(ebp + 0x30);
     const lx = rdf(0x25890), ly = rdf(0x25894), lz = rdf(0x25898);
     for (; ecx > 0; ecx--, edi += 0x30) {
-      wrf(0x251d0, ((lx * rdf(edi + 0x18) + ly * rdf(edi + 0x1c)) + lz * rdf(edi + 0x20)) + rdf(edi + 0x24));
+      wrf(ADDR.cullTmp, ((lx * rdf(edi + 0x18) + ly * rdf(edi + 0x1c)) + lz * rdf(edi + 0x20)) + rdf(edi + 0x24));
       let eax = 0;
-      if (!sign(0x251d0)) {
+      if (!sign(ADDR.cullTmp)) {
         eax = 1;
         wr32(rd32(edi + 0xc), 0x40); wr32(rd32(edi + 0x10), 0x40); wr32(rd32(edi + 0x14), 0x40);
       }
@@ -793,10 +801,10 @@ import { HP } from './hplus_core.js';
     const n = ((rd32(ebp + 0x3c) + rd32(ebp + 0x40) + rd32(ebp + 0x68)) << 1) >>> 0;
     wr32(0x251d4, n);
     const sz = (n << 3) + 0x10;
-    wr32(0x25a10, (HP.fn_29a(sz) | 0xf) + 1);
-    wr32(0x25a14, (HP.fn_29a(sz) | 0xf) + 1);
-    wr32(0x25a18, (HP.fn_29a(n * 0x30 + 0x10) | 0xf) + 1);
-    wr32(0x25a1c, (HP.fn_29a(n * 0xb4 + 0x10) | 0xf) + 1);
+    wr32(0x25a10, (alloc(sz) | 0xf) + 1);
+    wr32(0x25a14, (alloc(sz) | 0xf) + 1);
+    wr32(0x25a18, (alloc(n * 0x30 + 0x10) | 0xf) + 1);
+    wr32(0x25a1c, (alloc(n * 0xb4 + 0x10) | 0xf) + 1);
   };
   // fn_2629f(ebp=object): add visible faces to the sort list
   HP.fn_2629f = function (ebp) {
@@ -809,10 +817,10 @@ import { HP } from './hplus_core.js';
     for (; ecx > 0; ecx--, edi += 0x3c) wr32(edi, rd32(edi) & 0x7f);
     edi = rd32(0x25a20);
     let esi = rd32(ebp + 0x38), n = rd32(ebp + 0x30);
-    wr32(0x28e40, n);
+    wr32(ADDR.tmpF, n);
     const zc = rdf(0x251c4), zs = rdf(0x251b4), m02 = rdf(0x24d18), m12 = rdf(0x24d28), m22 = rdf(0x24d38);
     for (; n > 0; n--, esi += 0x30) {
-      wr32(0x28e40, n);
+      wr32(ADDR.tmpF, n);
       if (!(rd32(esi + 8) & 1)) continue;
       const v0 = rd32(esi + 0xc), v1 = rd32(esi + 0x10), v2 = rd32(esi + 0x14);
       if ((rd32(v0) & rd32(v1) & rd32(v2) & 0xf) !== 0) continue;
@@ -831,19 +839,19 @@ import { HP } from './hplus_core.js';
       key = (key + rds32(0x26224)) | 0;
       key = (key & rd32(0x26228)) >>> 0;
       wr32(edi, key); wr32(edi + 4, esi); edi += 8;
-      wr32(0x2a230, rd32(0x2a230) + 1);
+      wr32(ADDR.drawItemCount, rd32(ADDR.drawItemCount) + 1);
     }
-    wr32(0x28e40, 0);
+    wr32(ADDR.tmpF, 0);
     wr32(0x25a20, edi);
   };
   // fn_26408(ebp=object): add line faces to the sort list
   HP.fn_26408 = function (ebp) {
     let edi = rd32(0x25a20), esi = rd32(ebp + 0x38), n = rd32(ebp + 0x30);
     if (n <= 0) return;
-    wr32(0x28e40, n);
+    wr32(ADDR.tmpF, n);
     const zc = rdf(0x251c4), zs = rdf(0x251b4), lm = rdf(0x26400);
     for (; n > 0; n--, esi += 0x10) {
-      wr32(0x28e40, n);
+      wr32(ADDR.tmpF, n);
       if (!(rd32(esi + 4) & 1)) continue;
       const v0 = rd32(esi + 8), v1 = rd32(esi + 0xc);
       if ((rd32(v0) & rd32(v1) & 0xf) !== 0) continue;
@@ -852,14 +860,14 @@ import { HP } from './hplus_core.js';
       wr32(0x28e44, k);
       const key = (((0xffff - k) | 0) & rd32(0x26404)) >>> 0;
       wr32(edi, key); wr32(edi + 4, esi); edi += 8;
-      wr32(0x2a230, rd32(0x2a230) + 1);
+      wr32(ADDR.drawItemCount, rd32(ADDR.drawItemCount) + 1);
     }
-    wr32(0x28e40, 0);
+    wr32(ADDR.tmpF, 0);
     wr32(0x25a20, edi);
   };
   // fn_2649c: 2-pass radix sort (key bytes 0 and 1) of the [0x2a230] items in list A (via list B)
   HP.fn_2649c = function () {
-    const cnt = rd32(0x2a230);
+    const cnt = rd32(ADDR.drawItemCount);
     const A = rd32(0x25a10), B = rd32(0x25a14);
     function pass(src, dst, shift) {
       HP.fill32(0x25e24, 0, 0x100);
@@ -888,7 +896,7 @@ import { HP } from './hplus_core.js';
   function copyToTemp(ebp) {
     HP.copy(0x2a270, ebp, 0x3c);
     wr32(0x2a29c, 0); wr32(0x2a2a0, 0);
-    wr32(0x2a2a8, rd32(0x2a238)); wr32(0x2a2a4, rd32(0x2a23c));
+    wr32(0x2a2a8, rd32(ADDR.listAWrite)); wr32(0x2a2a4, rd32(ADDR.listBWrite));
   }
   HP.fn_2a542 = function (ebp) {          // 'Line' object
     let esi = rd32(ebp + 0x34), ecx = rd32(ebp + 0x2c);
@@ -922,8 +930,8 @@ import { HP } from './hplus_core.js';
   HP.fn_2a672 = function () {
     const scene = rd32(0x2a24c);
     let esi = rd32(scene + 0x514);
-    wr32(0x28e40, 0xff);
-    wrf(0x28a20, 255 / (rdf(esi + 0x20) * rdf(0x28e68) * rdf(0x254f8)));
+    wr32(ADDR.tmpF, 0xff);
+    wrf(0x28a20, 255 / (rdf(esi + 0x20) * rdf(ADDR.const2) * rdf(0x254f8)));
     let ecx = rd32(scene + 0x68);
     if (ecx === 0) return;
     const edx = rd32(0x2a248);
@@ -934,17 +942,17 @@ import { HP } from './hplus_core.js';
       const X = ((px * m(0x24) + py * m(0x34)) + pz * m(0x44)) + m(0x54);
       const Y = ((px * m(0x28) + py * m(0x38)) + pz * m(0x48)) + m(0x58);
       const Z = ((px * m(0x2c) + py * m(0x3c)) + pz * m(0x4c)) + m(0x5c);
-      wrf(esi + 0x1c, Z); wrf(0x28e50, Z); wrf(0x28e40, X); wrf(0x28e44, Y);
+      wrf(esi + 0x1c, Z); wrf(0x28e50, Z); wrf(ADDR.tmpF, X); wrf(0x28e44, Y);
       if (!sign(0x28e50)) continue;
       const w = 1 / rdf(0x28e50);
       wrf(esi + 0x18, (rdf(0x28e44) * rdf(0x28ea8)) * w + rdf(0x254f4));
-      wrf(esi + 0x14, (rdf(0x28e40) * rdf(0x254f8)) * w + rdf(0x254f0));
+      wrf(esi + 0x14, (rdf(ADDR.tmpF) * rdf(0x254f8)) * w + rdf(0x254f0));
       wrf(esi + 0x10, w);
       wr32(esi + 0x28, rd32(0x28a20));
-      const k = rne(-(((rdf(0x28e50) - rdf(0x251c4)) * rdf(0x251b4)) * rdf(0x28e6c))) | 0;
+      const k = rne(-(((rdf(0x28e50) - rdf(0x251c4)) * rdf(0x251b4)) * rdf(ADDR.const3))) | 0;
       wr32(0x28e44, k);
       wr32(edi, (0xffff - k) >>> 0); wr32(edi + 4, esi); edi += 8;
-      wr32(0x2a230, rd32(0x2a230) + 1);
+      wr32(ADDR.drawItemCount, rd32(ADDR.drawItemCount) + 1);
     }
     wr32(0x25a20, edi);
   };
@@ -978,11 +986,11 @@ import { HP } from './hplus_core.js';
       c = c * c; c = c * c; c = c * c; c = c * c;
       v = v * c;
     }
-    wrf(0x251d0, v - rdf(0x28e64));
-    if (sign(0x251d0)) v = 1;
-    wr32(0x28e40, 0xff);
-    wrf(0x251d0, 255 - v);
-    if (sign(0x251d0)) v = 255;
+    wrf(ADDR.cullTmp, v - rdf(ADDR.const1));
+    if (sign(ADDR.cullTmp)) v = 1;
+    wr32(ADDR.tmpF, 0xff);
+    wrf(ADDR.cullTmp, 255 - v);
+    if (sign(ADDR.cullTmp)) v = 255;
     wrf(esi + 0x34, v);
   };
   HP.fn_27ffc = function (esi) { HP.fn_27ee5(esi); };
@@ -1021,16 +1029,16 @@ import { HP } from './hplus_core.js';
     M = HP.M;
     wr32(0x28eac, rd32(rd32(ebp + 0x464)));
     wr16(0x28eb0, 0x037f);            // fnstcw (saved control word; RC is set to truncate while drawing)
-    if (rd32(0x2a230) !== 0) {
+    if (rd32(ADDR.drawItemCount) !== 0) {
       HP.fn_2649c();
       let esi = rd32(0x25a10) + 4;
-      while (rd32(0x2a230) !== 0) {
+      while (rd32(ADDR.drawItemCount) !== 0) {
         const ecx = rd32(esi);
         const h = HP.drawHandlers[rd32(ecx)];
         if (!h) throw new Error('unknown draw handler 0x' + rd32(ecx).toString(16) + ' for item 0x' + ecx.toString(16));
         h(ecx, ebp);
         esi += 8;
-        wr32(0x2a230, rd32(0x2a230) - 1);
+        wr32(ADDR.drawItemCount, rd32(ADDR.drawItemCount) - 1);
       }
     }
   };
@@ -1050,12 +1058,12 @@ import { HP } from './hplus_core.js';
   HP.drawHandlers[0x2a86e] = HP.fn_2a86e = function (ecx) {
     wr32(0x2a264, rd32(0x2a264) + 1);
     let eax = tr(rdf(ecx + 0x28) * rdf(ecx + 0x1c) * rdf(0x28a14)) | 0;
-    wr32(0x28e48, eax);
+    wr32(ADDR.tmpF2, eax);
     eax = eax >>> 0x11;
     if (!(eax < 0x3f)) eax = 0x3f;
     if (rd32(0x28a10) !== 0xffffffff) eax = rd32(0x28a10);
-    wr32(0x28a2c, rd32(0x28910 + eax * 4));
-    const sz = rdf(ecx + 0x28) * rdf(ecx + 0x1c) * rdf(0x28810 + eax * 4);
+    wr32(0x28a2c, rd32(ADDR.particleOffset + eax * 4));
+    const sz = rdf(ecx + 0x28) * rdf(ecx + 0x1c) * rdf(ADDR.particleScale + eax * 4);
     wrf(0x28a48, sz);
     wr32(0x28a50, tr(sz * rdf(0x28a14)) | 0);
     wrf(0x28a24, rdf(ecx + 0x20) * rdf(0x254f8) * rdf(ecx + 0x10));
@@ -1075,7 +1083,7 @@ import { HP } from './hplus_core.js';
       wr32(0x28e4c, v);
       if (v <= 0) v = 0;
       if (v >= 0xff) v = 0xff;
-      eax = rd32(0x29090 + v * 4);
+      eax = rd32(ADDR.shadeRamp + v * 4);
     }
     wr32(0x269fc, eax);
     const tex = rd32(ecx + 0x2c) * 0x18 + rd32(0x2a24c) + 0x454;
@@ -1083,40 +1091,40 @@ import { HP } from './hplus_core.js';
     wr32(0x268ec, rd32(tex + 0xc)); wr32(0x268f0, rd32(tex + 0x10));
     let filler = rd32(ecx + 4);
     if (filler !== 0x26a41 && filler !== 0x26c41 && filler !== 0x27d4a) {
-      wrf(0x251d0, rdf(esi + 0x34) + rdf(edi + 0x34) + rdf(ebp + 0x34) - rdf(0x28e6c));
-      if (rd32(0x251d0) === rd32(0x28e60)) { wr32(0x269fc, rd32(0x28eac)); filler = 0x26a41; }
+      wrf(ADDR.cullTmp, rdf(esi + 0x34) + rdf(edi + 0x34) + rdf(ebp + 0x34) - rdf(ADDR.const3));
+      if (rd32(ADDR.cullTmp) === rd32(0x28e60)) { wr32(0x269fc, rd32(0x28eac)); filler = 0x26a41; }
     }
     wr32(0x268e8, filler);
     const fill = HP.fillers[filler];
     if (!fill) throw new Error('unknown filler 0x' + filler.toString(16));
     if (((rd32(esi) | rd32(edi) | rd32(ebp)) & 0xf) === 0) { fill(esi, edi, ebp); return; }
-    const savedClipPtr = rd32(0x2a23c);
+    const savedClipPtr = rd32(ADDR.listBWrite);
     wr32(0x265a0, esi); wr32(0x265a4, edi); wr32(0x265a8, ebp); wr32(0x265ac, esi);
-    wr32(0x26640, 0);
+    wr32(ADDR.clipVertCount, 0);
     let src = 0x265a0, dst = 0x265f0;
     for (let i = 0; i < 3; i++) { src = HP.fn_2669e(src, dst); dst = src.dst; src = src.src; }
     do {
-      if (rd32(0x26640) < 3) break;
+      if (rd32(ADDR.clipVertCount) < 3) break;
       wr32(dst, rd32(0x265f0));
-      let n = rd32(0x26640); wr32(0x26640, 0); src = 0x265f0; dst = 0x265a0;
+      let n = rd32(ADDR.clipVertCount); wr32(ADDR.clipVertCount, 0); src = 0x265f0; dst = 0x265a0;
       for (; n > 0; n--) { const r = HP.fn_26749(src, dst); src = r.src; dst = r.dst; }
-      if (rd32(0x26640) < 3) break;
+      if (rd32(ADDR.clipVertCount) < 3) break;
       wr32(dst, rd32(0x265a0));
-      n = rd32(0x26640); wr32(0x26640, 0); src = 0x265a0; dst = 0x265f0;
+      n = rd32(ADDR.clipVertCount); wr32(ADDR.clipVertCount, 0); src = 0x265a0; dst = 0x265f0;
       for (; n > 0; n--) { const r = HP.fn_267f4(src, dst); src = r.src; dst = r.dst; }
-      if (rd32(0x26640) < 3) break;
+      if (rd32(ADDR.clipVertCount) < 3) break;
       wr32(dst, rd32(0x265f0));
-      n = rd32(0x26640); wr32(0x26640, 0); src = 0x265f0; dst = 0x265a0;
+      n = rd32(ADDR.clipVertCount); wr32(ADDR.clipVertCount, 0); src = 0x265f0; dst = 0x265a0;
       for (; n > 0; n--) { const r = HP.fn_26869(src, dst); src = r.src; dst = r.dst; }
-      if (rd32(0x26640) < 3) break;
-      wr32(0x26640, rd32(0x26640) - 2);
-      for (let k = 0; rd32(0x26640) !== 0; k += 4) {
+      if (rd32(ADDR.clipVertCount) < 3) break;
+      wr32(ADDR.clipVertCount, rd32(ADDR.clipVertCount) - 2);
+      for (let k = 0; rd32(ADDR.clipVertCount) !== 0; k += 4) {
         const f = HP.fillers[rd32(0x268e8)];
         f(rd32(0x265a0), rd32(0x265a4 + k), rd32(0x265a8 + k));
-        wr32(0x26640, rd32(0x26640) - 1);
+        wr32(ADDR.clipVertCount, rd32(ADDR.clipVertCount) - 1);
       }
     } while (false);
-    wr32(0x2a23c, savedClipPtr);
+    wr32(ADDR.listBWrite, savedClipPtr);
   };
 
   // ------------------------------------------------------------ screen-space polygon clippers
@@ -1143,18 +1151,18 @@ import { HP } from './hplus_core.js';
   };
   function newFlagsX(esi) {
     const X = rdf(esi + 0x10);
-    wrf(0x268f4, X - rdf(0x254e0)); wrf(0x251d0, rdf(0x254e8) - X);
-    return ((rd32(0x268f4) >>> 0x1e) & 2) | (rd32(0x251d0) >>> 0x1f);
+    wrf(0x268f4, X - rdf(0x254e0)); wrf(ADDR.cullTmp, rdf(0x254e8) - X);
+    return ((rd32(0x268f4) >>> 0x1e) & 2) | (rd32(ADDR.cullTmp) >>> 0x1f);
   }
   function clipper(bit, edgeAddr, horizontal, flagsFn) {
     return function (src, dst) {
       const ecx = rd32(src), edx = rd32(src + 4);
       src += 4;
       const ebx = (rd32(ecx) >>> bit) & 1;
-      if (ebx === 0) { wr32(dst, ecx); dst += 4; wr32(0x26640, rd32(0x26640) + 1); }
+      if (ebx === 0) { wr32(dst, ecx); dst += 4; wr32(ADDR.clipVertCount, rd32(ADDR.clipVertCount) + 1); }
       const eax = (rd32(edx) >>> bit) & 1;
       if (eax === ebx) return { src, dst };
-      const esi = rd32(0x2a23c);
+      const esi = rd32(ADDR.listBWrite);
       let t;
       if (horizontal) {          // clip to a y boundary
         t = (rdf(edgeAddr) - rdf(ecx + 0x14)) / (rdf(edx + 0x14) - rdf(ecx + 0x14));
@@ -1168,9 +1176,9 @@ import { HP } from './hplus_core.js';
       HP.fn_26644(ecx, edx, esi, t);
       wr32(esi, flagsFn ? flagsFn(esi) : 0);
       wr32(dst, esi);
-      wr32(0x2a23c, rd32(0x2a23c) + 0x3c);
+      wr32(ADDR.listBWrite, rd32(ADDR.listBWrite) + 0x3c);
       dst += 4;
-      wr32(0x26640, rd32(0x26640) + 1);
+      wr32(ADDR.clipVertCount, rd32(ADDR.clipVertCount) + 1);
       return { src, dst };
     };
   }
@@ -1213,17 +1221,17 @@ import { HP } from './hplus_core.js';
     wr32(0x269d8, ytop); wr32(0x269dc, ymid); wr32(0x269e0, ybot);
     if (ybot - ytop === 0) return;
     wrf(0x268f8, (rdf(ebp + 0x10) - rdf(esi + 0x10)) / (rdf(ebp + 0x14) - rdf(esi + 0x14)));
-    wr32(0x2690c, tr(((ytop - rdf(esi + 0x14)) * rdf(0x268f8) + rdf(esi + 0x10)) * rdf(0x268e0)) | 0);
+    wr32(0x2690c, tr(((ytop - rdf(esi + 0x14)) * rdf(0x268f8) + rdf(esi + 0x10)) * rdf(ADDR.angle16Scale)) | 0);
     const color = rd32(0x269fc), buf = rd32(0x2a244);
     if (ymid - ytop !== 0) {
       wr32(0x26958, ymid - ytop);
       wrf(0x26910, (rdf(edi + 0x10) - rdf(esi + 0x10)) / (rdf(edi + 0x14) - rdf(esi + 0x14)));
-      wr32(0x26924, tr(((ytop - rdf(esi + 0x14)) * rdf(0x26910) + rdf(esi + 0x10)) * rdf(0x268e0)) | 0);
+      wr32(0x26924, tr(((ytop - rdf(esi + 0x14)) * rdf(0x26910) + rdf(esi + 0x10)) * rdf(ADDR.angle16Scale)) | 0);
       let ecx = 0x268f8, edx = 0x26910;
-      wrf(0x251d0, rdf(0x26910) - rdf(0x268f8));
-      if (sign(0x251d0)) { const t = ecx; ecx = edx; edx = t; }
-      wr32(0x2695c, tr(rdf(ecx) * rdf(0x268e0)) | 0);
-      wr32(0x26960, tr(rdf(edx) * rdf(0x268e0)) | 0);
+      wrf(ADDR.cullTmp, rdf(0x26910) - rdf(0x268f8));
+      if (sign(ADDR.cullTmp)) { const t = ecx; ecx = edx; edx = t; }
+      wr32(0x2695c, tr(rdf(ecx) * rdf(ADDR.angle16Scale)) | 0);
+      wr32(0x26960, tr(rdf(edx) * rdf(ADDR.angle16Scale)) | 0);
       const row = (ytop * rds32(0x26a00) + buf) | 0;
       const r = HP.fn_26a0d(color, rds32(ecx + 0x14), rds32(edx + 0x14), row);
       wr32(ecx + 0x14, r[0]); wr32(edx + 0x14, r[1]);
@@ -1231,12 +1239,12 @@ import { HP } from './hplus_core.js';
     if (ybot - ymid !== 0) {
       wr32(0x26958, ybot - ymid);
       wrf(0x26910, (rdf(ebp + 0x10) - rdf(edi + 0x10)) / (rdf(ebp + 0x14) - rdf(edi + 0x14)));
-      wr32(0x26924, tr(((ymid - rdf(edi + 0x14)) * rdf(0x26910) + rdf(edi + 0x10)) * rdf(0x268e0)) | 0);
+      wr32(0x26924, tr(((ymid - rdf(edi + 0x14)) * rdf(0x26910) + rdf(edi + 0x10)) * rdf(ADDR.angle16Scale)) | 0);
       let ecx = 0x268f8, edx = 0x26910;
-      wrf(0x251d0, rdf(0x26910) - rdf(0x268f8));
-      if (!sign(0x251d0)) { const t = ecx; ecx = edx; edx = t; }
-      wr32(0x2695c, tr(rdf(ecx) * rdf(0x268e0)) | 0);
-      wr32(0x26960, tr(rdf(edx) * rdf(0x268e0)) | 0);
+      wrf(ADDR.cullTmp, rdf(0x26910) - rdf(0x268f8));
+      if (!sign(ADDR.cullTmp)) { const t = ecx; ecx = edx; edx = t; }
+      wr32(0x2695c, tr(rdf(ecx) * rdf(ADDR.angle16Scale)) | 0);
+      wr32(0x26960, tr(rdf(edx) * rdf(ADDR.angle16Scale)) | 0);
       const row = (ymid * rds32(0x26a00) + buf) | 0;
       HP.fn_26a0d(color, rds32(ecx + 0x14), rds32(edx + 0x14), row);
     }
@@ -1288,14 +1296,14 @@ import { HP } from './hplus_core.js';
       xr = xr + rdf(0x26960); xl = xl + rdf(0x2695c);
       const xri = tr(xr) | 0, xli = tr(xl) | 0;
       wr32(0x26968, xri); wrf(0x26c54, xr); wr32(0x26964, xli); wrf(0x26c50, xl);
-      const pre = (xli - rdf(0x26c50)) + rdf(0x28e64);
+      const pre = (xli - rdf(0x26c50)) + rdf(ADDR.const1);
       wrf(0x26c58, pre);
       const n = rdf(0x2696c), pref = rdf(0x26c58);
       const w0 = (rdf(ecx + 4) * n + rdf(0x26948)) + dwdx * pref;
       const uw0 = (rdf(ecx + 8) * n + rdf(0x2694c)) + duwdx * pref;
       const vw0 = (rdf(ecx + 0xc) * n + rdf(0x26950)) + dvwdx * pref;
       const lw0 = (rdf(ecx + 0x10) * n + rdf(0x26954)) + dlwdx * pref;
-      wrf(0x2696c, n + rdf(0x28e64));
+      wrf(0x2696c, n + rdf(ADDR.const1));
       let edi = xli;
       let cnt = xri - edi;
       if (cnt > 0) {
@@ -1307,12 +1315,12 @@ import { HP } from './hplus_core.js';
         let full = cnt >> 4; const rem = cnt & 0xf;
         wr32(0x268f4, full);
         if (rem !== 0) {
-          wrf(0x251d0, rem);
-          const r = rdf(0x251d0);
+          wrf(ADDR.cullTmp, rem);
+          const r = rdf(ADDR.cullTmp);
           a = { lw: dlwdx * r + a.lw, vw: dvwdx * r + a.vw, uw: duwdx * r + a.uw, w: dwdx * r + a.w };
           let e = endVals(a);
           wr32(0x26984, e.l); wr32(0x26980, e.v); wr32(0x2697c, e.u);
-          wr32(0x251d0, rem);
+          wr32(ADDR.cullTmp, rem);
           const inv = rdf(0x26990 + rem * 4);
           const du = tr((e.u - cur.u) * inv) | 0, dv = tr((e.v - cur.v) * inv) | 0, dl = tr((e.l - cur.l) * inv) | 0;
           wr32(0x2698c, dv); wr32(0x26990, dl); wr32(0x26988, du);
@@ -1326,7 +1334,7 @@ import { HP } from './hplus_core.js';
           st.bl = (cur.u >>> 16) & 0xff;
           wr32(0x26970, e.u); wr32(0x26974, e.v); wr32(0x26978, e.l);
           cur = e;
-          wr32(0x251d0, rem);
+          wr32(ADDR.cullTmp, rem);
           edi = pixelLoop(rem, edi, st, additive);
           if (full !== 0) {
             e = endVals(a);
@@ -1392,10 +1400,10 @@ import { HP } from './hplus_core.js';
     const buf = rd32(0x2a244);
     function perXGradients(ecx, edx) {
       const idx = 1 / (rdf(edx) - rdf(ecx));
-      let g = (rdf(edx + 4) - rdf(ecx + 4)) * idx; wrf(0x26928, g); wrf(0x26938, g * rdf(0x28e74));
-      g = (rdf(edx + 8) - rdf(ecx + 8)) * idx; wrf(0x2692c, g); wrf(0x2693c, g * rdf(0x28e74));
-      g = (rdf(edx + 0xc) - rdf(ecx + 0xc)) * idx; wrf(0x26930, g); wrf(0x26940, g * rdf(0x28e74));
-      g = (rdf(edx + 0x10) - rdf(ecx + 0x10)) * idx; wrf(0x26934, g); wrf(0x26944, g * rdf(0x28e74));
+      let g = (rdf(edx + 4) - rdf(ecx + 4)) * idx; wrf(0x26928, g); wrf(0x26938, g * rdf(ADDR.const16));
+      g = (rdf(edx + 8) - rdf(ecx + 8)) * idx; wrf(0x2692c, g); wrf(0x2693c, g * rdf(ADDR.const16));
+      g = (rdf(edx + 0xc) - rdf(ecx + 0xc)) * idx; wrf(0x26930, g); wrf(0x26940, g * rdf(ADDR.const16));
+      g = (rdf(edx + 0x10) - rdf(ecx + 0x10)) * idx; wrf(0x26934, g); wrf(0x26944, g * rdf(ADDR.const16));
     }
     function edgeStart(v, yi, ecx, uvU, uvV) {   // attribute starts along edge ecx from vertex v at integer y yi
       const p = yi - Y(v);
@@ -1414,8 +1422,8 @@ import { HP } from './hplus_core.js';
       wrf(0x2691c, (rdf(0x269f0) * W(edi) - rdf(0x269e8) * W(esi)) * ih2);
       wrf(0x26920, (L(edi) * W(edi) - L(esi) * W(esi)) * ih2);
       let ecx = 0x268f8, edx = 0x26910;
-      wrf(0x251d0, rdf(0x26910) - rdf(0x268f8));
-      if (sign(0x251d0)) { const t = ecx; ecx = edx; edx = t; }
+      wrf(ADDR.cullTmp, rdf(0x26910) - rdf(0x268f8));
+      if (sign(ADDR.cullTmp)) { const t = ecx; ecx = edx; edx = t; }
       wr32(0x2695c, rd32(ecx)); wr32(0x26960, rd32(edx));
       perXGradients(ecx, edx);
       edgeStart(esi, ytop, ecx, 0x269e4, 0x269e8);
@@ -1434,8 +1442,8 @@ import { HP } from './hplus_core.js';
       wrf(0x2691c, (rdf(0x269f8) * W(ebp) - rdf(0x269f0) * W(edi)) * ih3);
       wrf(0x26920, (L(ebp) * W(ebp) - L(edi) * W(edi)) * ih3);
       ecx = 0x268f8; edx = 0x26910;
-      wrf(0x251d0, rdf(0x26910) - rdf(0x268f8));
-      if (!sign(0x251d0)) {
+      wrf(ADDR.cullTmp, rdf(0x26910) - rdf(0x268f8));
+      if (!sign(ADDR.cullTmp)) {
         const t = ecx; ecx = edx; edx = t;           // short edge is the left edge
         wrf(0x2696c, 1);
         edgeStart(edi, ymid, ecx, 0x269ec, 0x269f0);
@@ -1459,8 +1467,8 @@ import { HP } from './hplus_core.js';
     wrf(0x2691c, (rdf(0x269f8) * W(ebp) - rdf(0x269f0) * W(edi)) * ih3);
     wrf(0x26920, (L(ebp) * W(ebp) - L(edi) * W(edi)) * ih3);
     let ecx = 0x268f8, edx = 0x26910;
-    wrf(0x251d0, rdf(0x26910) - rdf(0x268f8));
-    if (!sign(0x251d0)) {
+    wrf(ADDR.cullTmp, rdf(0x26910) - rdf(0x268f8));
+    if (!sign(ADDR.cullTmp)) {
       let t = ecx; ecx = edx; edx = t;
       t = edi; edi = esi; esi = t;
       const a = rd32(0x269e4), b = rd32(0x269e8);
@@ -1486,43 +1494,43 @@ import { HP } from './hplus_core.js';
     const pitch = rd32(0x28808) << 2;
     wr32(0x28028, pitch); wr32(0x28631, pitch); wr32(0x28642, pitch); wr32(0x286a2, pitch); wr32(0x286ac, pitch + 1);
     wr32(0x286c1, pitch); wr32(0x286c8, pitch + 1); wr32(0x286cf, pitch + 2); wr32(0x286de, pitch + 2);
-    const half = rdf(0x28068);
+    const half = rdf(ADDR.constHalf);
     wrf(esi, rdf(esi) - half); wrf(edi, rdf(edi) - half);
     wrf(esi + 4, rdf(esi + 4) - half); wrf(edi + 4, rdf(edi + 4) - half);
     for (let ecx = 2; ecx > 0; ecx--) {
-      wrf(0x251d0, rdf(esi) - rdf(0x254e0));
-      if (sign(0x251d0)) {
+      wrf(ADDR.cullTmp, rdf(esi) - rdf(0x254e0));
+      if (sign(ADDR.cullTmp)) {
         const prod = (rdf(edi + 4) - rdf(esi + 4)) * (rdf(0x254e0) - rdf(esi));
         const dx = rdf(edi) - rdf(esi);
-        wr32(0x251d0, tr(dx) | 0);
-        if (rd32(0x251d0) === 0) return;
+        wr32(ADDR.cullTmp, tr(dx) | 0);
+        if (rd32(ADDR.cullTmp) === 0) return;
         wrf(esi + 4, prod / dx + rdf(esi + 4));
         wrf(esi, rdf(0x254e0));
       }
-      wrf(0x251d0, rdf(esi + 4) - rdf(0x254e4));
-      if (sign(0x251d0)) {
+      wrf(ADDR.cullTmp, rdf(esi + 4) - rdf(0x254e4));
+      if (sign(ADDR.cullTmp)) {
         const prod = (rdf(edi) - rdf(esi)) * (rdf(0x254e4) - rdf(esi + 4));
         const dy = rdf(edi + 4) - rdf(esi + 4);
-        wr32(0x251d0, tr(dy) | 0);
-        if (rd32(0x251d0) === 0) return;
+        wr32(ADDR.cullTmp, tr(dy) | 0);
+        if (rd32(ADDR.cullTmp) === 0) return;
         wrf(esi, prod / dy + rdf(esi));
         wrf(esi + 4, rdf(0x254e4));
       }
-      wrf(0x251d0, rdf(0x28030) - rdf(esi));
-      if (sign(0x251d0)) {
+      wrf(ADDR.cullTmp, rdf(0x28030) - rdf(esi));
+      if (sign(ADDR.cullTmp)) {
         const prod = (rdf(edi + 4) - rdf(esi + 4)) * (rdf(0x28030) - rdf(esi));
         const dx = rdf(edi) - rdf(esi);
-        wr32(0x251d0, tr(dx) | 0);
-        if (rd32(0x251d0) === 0) return;
+        wr32(ADDR.cullTmp, tr(dx) | 0);
+        if (rd32(ADDR.cullTmp) === 0) return;
         wrf(esi + 4, prod / dx + rdf(esi + 4));
         wrf(esi, rdf(0x28030));
       }
-      wrf(0x251d0, rdf(0x28034) - rdf(esi + 4));
-      if (sign(0x251d0)) {
+      wrf(ADDR.cullTmp, rdf(0x28034) - rdf(esi + 4));
+      if (sign(ADDR.cullTmp)) {
         const prod = (rdf(edi) - rdf(esi)) * (rdf(0x28034) - rdf(esi + 4));
         const dy = rdf(edi + 4) - rdf(esi + 4);
-        wr32(0x251d0, tr(dy) | 0);
-        if (rd32(0x251d0) === 0) return;
+        wr32(ADDR.cullTmp, tr(dy) | 0);
+        if (rd32(ADDR.cullTmp) === 0) return;
         wrf(esi, prod / dy + rdf(esi));
         wrf(esi + 4, rdf(0x28034));
       }
@@ -1539,12 +1547,12 @@ import { HP } from './hplus_core.js';
       // y-major
       if (!(rds32(esi + 0xc) < rds32(edi + 0xc))) { const t = esi; esi = edi; edi = t; }
       const dx = rdf(edi) - rdf(esi), dy = rdf(edi + 4) - rdf(esi + 4);
-      wr32(0x251d0, tr(dy) | 0);
-      if (rd32(0x251d0) === 0) return;
+      wr32(ADDR.cullTmp, tr(dy) | 0);
+      if (rd32(ADDR.cullTmp) === 0) return;
       const slope = dx / dy;
       const x0 = (rds32(esi + 0xc) - rdf(esi + 4)) * slope + rdf(esi);
-      wr32(0x28058, tr(x0 * rdf(0x2806c)) | 0);
-      wr32(0x2805c, tr(slope * rdf(0x2806c)) | 0);
+      wr32(0x28058, tr(x0 * rdf(ADDR.fixed16Scale)) | 0);
+      wr32(0x2805c, tr(slope * rdf(ADDR.fixed16Scale)) | 0);
       let ebp = rds32(edi + 0xc) - rds32(esi + 0xc);
       if (ebp === 0) return;
       let p = (rds32(esi + 0xc) * pitch + buf) | 0;
@@ -1574,12 +1582,12 @@ import { HP } from './hplus_core.js';
       // x-major
       if (!(rds32(esi + 8) < rds32(edi + 8))) { const t = esi; esi = edi; edi = t; }
       const dy = rdf(edi + 4) - rdf(esi + 4), dx = rdf(edi) - rdf(esi);
-      wr32(0x251d0, tr(dx) | 0);
-      if (rd32(0x251d0) === 0) return;
+      wr32(ADDR.cullTmp, tr(dx) | 0);
+      if (rd32(ADDR.cullTmp) === 0) return;
       const slope = dy / dx;
       const y0 = (rds32(esi + 8) - rdf(esi)) * slope + rdf(esi + 4);
-      wr32(0x28058, tr(y0 * rdf(0x2806c)) | 0);
-      wr32(0x2805c, tr(slope * rdf(0x2806c)) | 0);
+      wr32(0x28058, tr(y0 * rdf(ADDR.fixed16Scale)) | 0);
+      wr32(0x2805c, tr(slope * rdf(ADDR.fixed16Scale)) | 0);
       let ebp = rds32(edi + 8) - rds32(esi + 8);
       if (ebp === 0) return;
       let p = (rds32(esi + 8) * 4 + buf) | 0;
@@ -1632,7 +1640,7 @@ import { HP } from './hplus_core.js';
     if (!(y1 < bottom)) { y1 = bottom; wr32(0x269dc, y1); }
     const width = x1 - x0;
     if (width === 0) return;
-    wr32(0x251d0, width);
+    wr32(ADDR.cullTmp, width);
     const rowadv = (rds32(0x28808) - width) << 2;
     wr32(0x28c4d, rowadv);
     const lvl = rd32(0x28a2c); wr32(0x28c3e, lvl);
@@ -1674,7 +1682,7 @@ import { HP } from './hplus_core.js';
   // evaluates a Catmull-Rom-ish cubic for `count` channels -> [0x28c74 + i*4]
   HP.fn_28ca4 = function (ebx, ecx, edi) {
     const t = rdf(ebx);
-    const hf = rdf(0x28c60), two = rdf(0x28e68), three = rdf(0x28e6c);
+    const hf = rdf(0x28c60), two = rdf(ADDR.const2), three = rdf(ADDR.const3);
     if (rd32(0x28c9c) === 0) {
       let ebp = rd32(ebx + 8) + 0x28;
       for (let i = 0; i < ecx; i++, ebp += 4) {
@@ -1714,18 +1722,18 @@ import { HP } from './hplus_core.js';
   };
   // fn_2b037(ebx=walker, ecx=float bits of the speed factor): advance t, wrap keys
   HP.fn_2b037 = function (ebx, ecx) {
-    wr32(0x28e48, ecx);
-    let t = rdf(ebx + 4) * rdf(0x28e48) + rdf(ebx);
-    wrf(0x28e48, t);
-    if (sign(0x28e48)) {
-      t = t + rdf(0x28e64);
+    wr32(ADDR.tmpF2, ecx);
+    let t = rdf(ebx + 4) * rdf(ADDR.tmpF2) + rdf(ebx);
+    wrf(ADDR.tmpF2, t);
+    if (sign(ADDR.tmpF2)) {
+      t = t + rdf(ADDR.const1);
       wr32(ebx + 8, rd32(ebx + 8) - 0x28);
       const eax = (rd32(ebx + 0xc) - 0x78) | 0;
       if (!(rds32(ebx + 8) > 0)) wr32(ebx + 8, eax);
     }
-    wrf(0x28e48, rdf(0x28e64) - t);
-    if (sign(0x28e48)) {
-      t = t - rdf(0x28e64);
+    wrf(ADDR.tmpF2, rdf(ADDR.const1) - t);
+    if (sign(ADDR.tmpF2)) {
+      t = t - rdf(ADDR.const1);
       wr32(ebx + 8, rd32(ebx + 8) + 0x28);
       const eax = (rd32(ebx + 0xc) - 0x78) | 0;
       if (!(rds32(ebx + 8) < eax)) wr32(ebx + 8, 0);
@@ -1734,8 +1742,8 @@ import { HP } from './hplus_core.js';
   };
   // fn_2af3a: stir the RNG, set the particle texture level override from debug keys
   HP.fn_2af3a = function () {
-    wr32(0x28e38, rd32(0x28e38) + rd32(0x28e3c));
-    wr32(0x28e3c, (HP.rol(rd32(0x28e3c), 5) + 0x12039421) >>> 0);
+    wr32(ADDR.rngS1, rd32(ADDR.rngS1) + rd32(ADDR.rngS2));
+    wr32(ADDR.rngS2, (HP.rol(rd32(ADDR.rngS2), 5) + 0x12039421) >>> 0);
     wr32(0x28a10, 0xffffffff);
     if (rd8(0x9f4) === 1) wr32(0x28a10, 0);
     if (rd8(0x9f5) === 1) wr32(0x28a10, 2);
@@ -1746,8 +1754,8 @@ import { HP } from './hplus_core.js';
   };
   // fn_2abbc(ecx=dt, esi=camera, ebp=scene): debug free-flight camera (key flags at 0x9e5..0xa1b)
   HP.fn_2abbc = function (ecx, esi, ebp) {
-    if (rd8(0xa12) === 1) wrf(ebp + 0x34, rdf(0x28e68) + rdf(ebp + 0x34));
-    if (rd8(0xa16) === 1) wrf(ebp + 0x34, -rdf(0x28e68) + rdf(ebp + 0x34));
+    if (rd8(0xa12) === 1) wrf(ebp + 0x34, rdf(ADDR.const2) + rdf(ebp + 0x34));
+    if (rd8(0xa16) === 1) wrf(ebp + 0x34, -rdf(ADDR.const2) + rdf(ebp + 0x34));
     let eax = Math.imul(ecx, 0x3e8);
     wr32(0x2ab58, 0); wr32(0x2ab5c, 0); wr32(0x2ab60, 0);
     if (rd8(0xa13) === 1) wr32(0x2ab5c, rd32(0x2ab5c) - eax);
@@ -1758,8 +1766,8 @@ import { HP } from './hplus_core.js';
     if (rd8(0x9e5) === 1) wr32(0x2ab60, rd32(0x2ab60) - eax);
     eax = ecx;
     if (rd8(0x9fe) === 1) eax = Math.imul(eax, 0xa);
-    wr32(0x28e40, eax);
-    const f = rds32(0x28e40);
+    wr32(ADDR.tmpF, eax);
+    const f = rds32(ADDR.tmpF);
     const move = (o, sgn) => {
       wrf(esi, sgn * (rdf(esi + o) * f) + rdf(esi));
       wrf(esi + 4, sgn * (rdf(esi + o + 0x10) * f) + rdf(esi + 4));
@@ -1771,9 +1779,9 @@ import { HP } from './hplus_core.js';
     if (rd8(0xa17) === 1) move(0x28, -1);
     if (rd8(0xa11) === 1) move(0x2c, 1);
     if (rd8(0xa19) === 1) move(0x2c, -1);
-    wrf(0x24fb8, rds32(0x2ab58) / rdf(0x268e0));
-    wrf(0x24fbc, rds32(0x2ab5c) / rdf(0x268e0));
-    wrf(0x24fc0, rds32(0x2ab60) / rdf(0x268e0));
+    wrf(0x24fb8, rds32(0x2ab58) / rdf(ADDR.angle16Scale));
+    wrf(0x24fbc, rds32(0x2ab5c) / rdf(ADDR.angle16Scale));
+    wrf(0x24fc0, rds32(0x2ab60) / rdf(ADDR.angle16Scale));
     wrf(0x24fac, 0); wrf(0x24fb0, 0); wrf(0x24fb4, 0); wrf(0x24fa8, 1);
     HP.fn_24fc4(0x24d10);
     const src = [0x24, 0x28, 0x2c, 0x34, 0x38, 0x3c, 0x44, 0x48, 0x4c];
@@ -1857,7 +1865,7 @@ import { HP } from './hplus_core.js';
     if (rd32(0x2c548) !== 0) HP.fn_2c100(0, edi + 0x30d58, 0x2b2ae);
     HP.fn_2b461(rd32(0x2b446), 0xc800, edi);
     HP.fn_2b461(rd32(0x28e54), 0xd200, edi);
-    HP.fn_2b461((rd32(0x28e54) - HP.fn_2c2()) >>> 0, 0xdc00, edi);
+    HP.fn_2b461((rd32(0x28e54) - himemFree()) >>> 0, 0xdc00, edi);
     HP.fn_2b461(rd32(0x28e58), 0xe600, edi);
     const d = edi + 0x3c000;
     HP.fn_2c1c7(ecx, 0x2b455);
@@ -1866,9 +1874,9 @@ import { HP } from './hplus_core.js';
   };
   // fn_2b0a8(esi=buffer, ebp=scene): present a frame
   HP.fn_2b0a8 = function (esi, ebp) {
-    wr32(0x28e40, esi);
-    if (rd8(0x9f1) === 1) {
-      wr32(0x28e30, rd32(0x28e30) + rd32(0x2ee54));
+    wr32(ADDR.tmpF, esi);
+    if (rd8(ADDR.keyFps) === 1) {
+      wr32(0x28e30, rd32(0x28e30) + rd32(ADDR.timerMs));
       wr32(0x28e2c, rd32(0x28e2c) + 1);
       if (rds32(0x28e2c) >= 3) {
         if (rd32(0x28e30) !== 0) {
@@ -1880,9 +1888,9 @@ import { HP } from './hplus_core.js';
       }
       HP.fn_2b2b7(rd32(0x28e34), esi, ebp);
     }
-    HP.fn_2c9f4(rd32(0x28e40));
-    wr32(0x28e28, rd32(0x2ee54));
-    wr32(0x2ee54, 0);
+    HP.fn_2c9f4(rd32(ADDR.tmpF));
+    wr32(ADDR.frameMs, rd32(ADDR.timerMs));
+    wr32(ADDR.timerMs, 0);
   };
 
   // ------------------------------------------------------------ video layer

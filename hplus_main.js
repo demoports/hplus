@@ -4,6 +4,17 @@
 // fn_c51/fn_c7a (keyboard IRQ install/remove — no-ops in JS); parts: fn_15922/fn_15c18 (A), fn_1816a/fn_182fc (B),
 // fn_1b5eb/fn_1b8c0 (C), fn_1d39f/fn_1d566 (D), fn_1fde5/fn_1ffe5 (E), fn_231ca/fn_236ef (F).
 import { HP } from './hplus_core.js';
+import { ADDR } from './hplus_addr.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const alloc        = (...a) => HP.fn_29a(...a);     // core: fn_29a — high memory
+const dosPrint     = (...a) => HP.fn_2c1e6(...a);   // engine: fn_2c1e6
+const engineInit   = (...a) => HP.fn_28f4a(...a);   // engine: fn_28f4a
+const restoreVideo = (...a) => HP.fn_2cd46(...a);   // engine: fn_2cd46
+const musicStart   = (...a) => HP.fn_f50(...a);     // sound: fn_f50
+const musicStop    = (...a) => HP.fn_f80(...a);     // sound: fn_f80
+const soundInit    = (...a) => HP.fn_d5b(...a);     // sound: fn_d5b
 
 const { rd8, rd16, rd32, rds32, wr8, wr16, wr32 } = HP;
 
@@ -20,7 +31,7 @@ HP.fn_e2bc = function () {
 // fn_e1cc: build the 64x64 "K" table at [0xe1b6] (0x130a bytes) from the 0x30a bytes at 0xd3a2
 HP.fn_e1cc = function () {
   const M = HP.M;
-  let eax = HP.fn_29a(0x130a); wr32(0xe1b6, eax);
+  let eax = alloc(0x130a); wr32(0xe1b6, eax);
   let esi = 0xd3a2, edi = eax;
   HP.copy(edi, esi, 0x30a); edi += 0x30a; esi += 0x30a;
   wr16(edi - 0x306, 0x40); wr16(edi - 0x304, 0x40);
@@ -72,14 +83,14 @@ HP.SC_ESC = 1; HP.SC_SPACE = 0x39; HP.SC_BACKTICK = 0x29; HP.SC_F = 0x21; // etc
 // ---- startup (0xe2d3 .. 0xe391), without the parts of it that are the player's/engine's
 HP.mainInit = function (opts) {
   opts = opts || {};
-  if (HP.fn_2c1e6) HP.fn_2c1e6(0x1054);   // "hplus loading" (no-op in the browser)
+  if (HP.fn_2c1e6) dosPrint(0x1054);   // "hplus loading" (no-op in the browser)
   wr32(0x2438a, 0xe27a);           // object builder data callback (engine calls HP.fn_e27a)
   HP.fn_e1cc();
-  HP.fn_28f4a();                   // engine init
-  HP.fn_d5b();                     // sound init (player; allocs 0x3740 state etc., sets [0xe20])
+  engineInit();                   // engine init
+  soundInit();                     // sound init (player; allocs 0x3740 state etc., sets [0xe20])
   HP.fn_e1ba(0x1090);
   // 256x256 word multiplication table
-  let eax = HP.fn_29a(0x20010); eax = (eax | 0xf) + 1; wr32(0x1088, eax);
+  let eax = alloc(0x20010); eax = (eax | 0xf) + 1; wr32(0x1088, eax);
   const dv = HP.DV;
   for (let b = 0, p = eax; b < 0x100; b++) for (let c = 0; c < 0x100; c++, p += 2) dv.setUint16(p, (b * c) & 0xffff, true);
   wr32(0x28ed4, 0);
@@ -90,8 +101,8 @@ HP.mainInit = function (opts) {
   }
   HP.fn_e2bc();
   // fn_c51: keyboard IRQ install — host feeds HP.key()
-  HP.fn_f50(0x1090, 0x3f);         // start the music (esi=module, eax=volume)
-  wr32(0x1084, 0);
+  musicStart(0x1090, 0x3f);         // start the music (esi=module, eax=volume)
+  wr32(ADDR.partExit, 0);
 };
 
 // ---- the part sequence (0xe39b .. 0xe448) as a generator of frames
@@ -101,7 +112,7 @@ HP.SEQUENCE = [
   ['B', 'fn_182fc', [1, 0], false], ['C', 'fn_1b8c0', [4], true], ['D', 'fn_1d566', [4], true],
   ['E', 'fn_1ffe5', [4, 2], true], ['F', 'fn_236ef', [], true], ['A', 'fn_15c18', [0xffffffff, 0x64], false]];
 HP.mainSequence = function* (from) {
-  const esc = () => rds32(0x1084) === 1;
+  const esc = () => rds32(ADDR.partExit) === 1;
   for (let i = from || 0; i < HP.SEQUENCE.length; i++) {
     const [name, fn, args, chk] = HP.SEQUENCE[i];
     HP.part = name; HP.partIndex = i; HP.partRun = (HP.partRun || 0) + 1;   // partRun identifies this run of the part
@@ -112,7 +123,7 @@ HP.mainSequence = function* (from) {
 };
 // 0xe448: shutdown
 HP.mainExit = function () {
-  if (HP.fn_f80) HP.fn_f80();      // stop music
-  if (HP.fn_2cd46) HP.fn_2cd46();  // restore video
-  if (HP.fn_2c1e6) HP.fn_2c1e6(0x1064);
+  if (HP.fn_f80) musicStop();      // stop music
+  if (HP.fn_2cd46) restoreVideo();  // restore video
+  if (HP.fn_2c1e6) dosPrint(0x1064);
 };

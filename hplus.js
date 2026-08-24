@@ -1,6 +1,7 @@
 // hplus port — browser glue: loads/unpacks HPLUS.EXE, drives the part sequencer with real time,
 // streams the music player into WebAudio, maps keys, presents frames on a canvas, seeks (+-5 s).
 import { HP } from './hplus_core.js';
+import { ADDR } from './hplus_addr.js';
 import { HP_DATA_GZ_B64 } from './hplus_data.js';
 
 // the emulated code and the effects register themselves on HP when they load
@@ -13,6 +14,10 @@ import './hplus_fxC.js';
 import './hplus_fxD.js';
 import './hplus_fxE.js';
 import './hplus_fxF.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const musicStart = (...a) => HP.fn_f50(...a);   // sound: fn_f50
 
 export { HP };
 
@@ -30,7 +35,7 @@ async function loadData() {
 
 function setSongPosition(pos) {       // what the effects read: [0xe20]+0x30 order, +0x34 row, +0x23 tick
   if (!pos) return;
-  const p = HP.rd32(0xe20);
+  const p = HP.rd32(ADDR.playerState);
   HP.wr32(p + 0x30, pos.order); HP.wr32(p + 0x34, pos.row); HP.wr32(p + 0x23, pos.tick);
 }
 function blitTo(ctx2d, imgData, pix, bufOff) {

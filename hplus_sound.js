@@ -3,15 +3,21 @@
 // fn_f50 (start: creates the player from the decrypted module in M), fn_f6c (set global volume), fn_f80 (stop),
 // fn_2cf9a (driver call: master volume 12/0, used by the timer "glitch").
 import { HP } from './hplus_core.js';
+import { ADDR } from './hplus_addr.js';
 import { HPlusPlayer } from './hplus_player.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const alloc    = (...a) => HP.fn_29a(...a);   // core: fn_29a — high memory
+const allocLow = (...a) => HP.fn_27c(...a);   // core: fn_27c — low memory
 
 const P = HPlusPlayer;
 const { rd32, wr32 } = HP;
 HP.fn_d5b = function () {
-  HP.fn_27c(0x20000);                                   // 128 KB low-memory DMA block
-  const p = HP.fn_29a(0x3740 + 0x4000 + 0x3c00);        // player state + driver memory (+ alignment slack), as the original's himem advance
+  allocLow(0x20000);                                   // 128 KB low-memory DMA block
+  const p = alloc(0x3740 + 0x4000 + 0x3c00);        // player state + driver memory (+ alignment slack), as the original's himem advance
   // the original: [0xe20] = 16-byte aligned state ptr; the driver block follows. We only need the pointer for sync fields.
-  wr32(0xe20, (p | 0xf) + 1);
+  wr32(ADDR.playerState, (p | 0xf) + 1);
   wr32(0xe10, 0);                                       // sound present
   wr32(0xe14, 2);                                       // card type (SB16)
   HP.player = null;

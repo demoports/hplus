@@ -22,6 +22,33 @@
 //   fn_2438e(ebp)                         called by fn_2432c (engine texture-entry creation)       [engine]
 // Player state: [0xe20] -> +0x30 order, +0x34 row.
 import { HP } from './hplus_core.js';
+import { ADDR } from './hplus_addr.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const alloc            = (...a) => HP.fn_29a(...a);     // core: fn_29a — high memory
+const rand             = (...a) => HP.fn_2c2c8(...a);   // core: fn_2c2c8 — eax = range
+const buildObject      = (...a) => HP.fn_29060(...a);   // engine: fn_29060 — build object from chunk data
+const cameraFromSpline = (...a) => HP.fn_2afd3(...a);   // engine: fn_2afd3 — (ebx=walker, esi=camera, edi=path base, ebp=scene)
+const invSqrt          = (...a) => HP.fn_23f8c(...a);   // engine: fn_23f8c — fast inverse sqrt on float bits
+const objectInit       = (...a) => HP.fn_2a094(...a);   // engine: fn_2a094
+const present          = (...a) => HP.fn_2b0a8(...a);   // engine: fn_2b0a8
+const renderObject     = (...a) => HP.fn_2a2ac(...a);   // engine: fn_2a2ac — (esi=camera, ebp=object, edi=dest buffer)
+const splineAdvance    = (...a) => HP.fn_2b037(...a);   // engine: fn_2b037 — (ebx=walker, ecx=speed factor bits): advance t, wrap keys
+const stirRng          = (...a) => HP.fn_2af3a(...a);   // engine: fn_2af3a — stir the RNG + particle texture level override
+const copyChunk        = (...a) => HP.fn_156ff(...a);   // fxA: fn_156ff — copy a length-prefixed chunk
+
+// this part's own globals (0x21db4..0x228e8)
+const PART = Object.freeze({
+  tmpI     : 0x21db4,       // int spill slot: the original stored here; the port keeps the store so memory snapshots match
+  state    : 0x22888,       // state machine 0..5, driven by the song position
+  subState : 0x2288c,
+  lightOn  : 0x22890,
+  lightDist: 0x22894,
+  displace : 0x228a0,       // mesh displacement along the face normals
+  velocity : 0x228a4,
+  tmpI2    : 0x228e4,       // int spill slot: the original stored here; the port keeps the store so memory snapshots match
+});
 
 const { rd8, rd16, rd32, rds32, wr8, wr16, wr32, rdf, wrf, fround, roundHalfEven } = HP;
 const f = fround;
@@ -34,9 +61,9 @@ const wrfn = (a, v) => { if (v !== v) wr32(a, 0xffc00000); else wrf(a, v); };
 // [0x228fc] and a 0xa00-entry BGRX gradient at [0x22900].
 HP.fn_22d30 = function () {
   const M = HP.M;
-  wr32(0x228e4, 0x100);
+  wr32(PART.tmpI2, 0x100);
   wrf(0x22d28, Math.PI * rdf(0x22d28) / 256);
-  let eax = HP.fn_29a(0x4d810); eax = (eax | 0xf) + 1;
+  let eax = alloc(0x4d810); eax = (eax | 0xf) + 1;
   wr32(0x228fc, eax); eax += 0x4b000; wr32(0x22900, eax); eax += 0x2800;
   // gradient
   let a = 0xa0, b = 0x8c, edi = rd32(0x22900);
@@ -52,7 +79,7 @@ HP.fn_22d30 = function () {
   for (let y = -0x78; y < 0x78; y++) {
     wr32(0x228e8, y);
     for (let x = -0xa0; x < 0xa0; x++) {
-      wr32(0x228e4, x);
+      wr32(PART.tmpI2, x);
       const xk = x * k;
       let r = Math.sqrt(y * y + xk * xk) * rs * gs;
       const ri = rint(r); wr32(0x228f0, ri);
@@ -63,7 +90,7 @@ HP.fn_22d30 = function () {
       wr16(edi, ri); wr16(edi + 2, (ai & 0xffff) >>> 8);
       edi += 4;
     }
-    wr32(0x228e4, 0xa0);
+    wr32(PART.tmpI2, 0xa0);
   }
   wr32(0x228e8, 0x78);
 };
@@ -87,7 +114,7 @@ HP.fn_22e68 = function () {
   if (rds32(0x228d0) <= -0x140 || rds32(0x228d0) >= 0x140) return;
   if (rds32(0x228d4) <= -0xf0 || rds32(0x228d4) >= 0xf0) return;
   wr32(0x228ec, rint(rdf(0x228cc)));
-  let e = (-(rds32(0x228ec) + rds32(0x22894)) | 0) >> 4;
+  let e = (-(rds32(0x228ec) + rds32(PART.lightDist)) | 0) >> 4;
   if (e <= 0) e = 0;
   if (e >= 0x100) e = 0x100;
   wr32(0x228ec, e);
@@ -103,11 +130,11 @@ HP.fn_22e68 = function () {
     }
   }
   let src = rd32(0x228fc);
-  wr32(0x228e4, 0x140); wr32(0x228e8, 0xf0);
+  wr32(PART.tmpI2, 0x140); wr32(0x228e8, 0xf0);
   if (rds32(0x228d0) <= 0) {
     wr32(0x228d0, -rds32(0x228d0));
     const x0 = rds32(0x228d0);
-    wr32(0x228e4, rds32(0x228e4) - x0); src += x0 * 4; wr32(0x228d0, 0);
+    wr32(PART.tmpI2, rds32(PART.tmpI2) - x0); src += x0 * 4; wr32(0x228d0, 0);
   }
   if (rds32(0x228d4) <= 0) {
     wr32(0x228d4, -rds32(0x228d4));
@@ -115,10 +142,10 @@ HP.fn_22e68 = function () {
     wr32(0x228e8, rds32(0x228e8) - y0); src += y0 * 0x500; wr32(0x228d4, 0);
   }
   const sxp = rds32(0x228d0), syp = rds32(0x228d4);
-  wr32(0x228e4, rds32(0x228e4) - sxp); if (rds32(0x228e4) === 0) return;
+  wr32(PART.tmpI2, rds32(PART.tmpI2) - sxp); if (rds32(PART.tmpI2) === 0) return;
   wr32(0x228e8, rds32(0x228e8) - syp); if (rds32(0x228e8) === 0) return;
   let dst = ((syp * 5) << 6) + sxp; dst = (dst << 2) + rd32(0x21da0);
-  const pal = rd32(0x22900), w = rds32(0x228e4), inten = rds32(0x228ec);
+  const pal = rd32(0x22900), w = rds32(PART.tmpI2), inten = rds32(0x228ec);
   for (let rows = rds32(0x228e8); rows > 0; rows--) {
     let s = src, d = dst;
     for (let c = w; c > 0; c--) {
@@ -139,7 +166,7 @@ HP.fn_23124 = function (esi, edi, ebp) {
   let eax = rds32(0x228b8);
   wr32(0x21db8, 0xc8);
   for (let c = 0xa; c > 0; c--) {
-    wr32(0x21db4, eax); wrf(edi + ebp + 0x18, eax);
+    wr32(PART.tmpI, eax); wrf(edi + ebp + 0x18, eax);
     wrf(edi + 0x20, rds32(0x21db8));
     eax = (eax + rds32(0x228bc)) | 0;
     wr32(0x21db8, rds32(0x21db8) - 0x32);
@@ -163,18 +190,18 @@ HP.fn_23124 = function (esi, edi, ebp) {
 // fn_231ca: part F precalc (called last, with [0x28ed4]=1; it also ends up selecting the video mode via the engine)
 HP.fn_231ca = function () {
   const M = HP.M;
-  let eax = HP.fn_29a(0x101010); eax = (eax | 0xf) + 1;
+  let eax = alloc(0x101010); eax = (eax | 0xf) + 1;
   wr32(0x21da0, eax); eax += 0x4b000; wr32(0x21da4, eax); eax += 0x4b000; wr32(0x21da8, eax); eax += 0x4b000;
   const buf = rd32(0x21da0);
   wr32(0x23fd0, -0x6a4);
-  HP.fn_156ff(0x203f4, buf);
-  HP.fn_29060(0, 1, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
+  copyChunk(0x203f4, buf);
+  buildObject(0, 1, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
   wr32(0x23fd0, 0x1388);
-  HP.fn_156ff(0x20e53, buf);
-  HP.fn_29060(3, 9, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
+  copyChunk(0x20e53, buf);
+  buildObject(3, 9, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
   wr32(0x23fd0, -0x5dc);
-  HP.fn_156ff(0x213b2, buf);
-  HP.fn_29060(3, 1, 0, 0xffffffff, rd32(0x223c0), buf, 0x21dbc);
+  copyChunk(0x213b2, buf);
+  buildObject(3, 1, 0, 0xffffffff, rd32(0x223c0), buf, 0x21dbc);
   // 'Line' object: the ring vertices relative to [0x220b0..], 16-wide grid lines
   let edi = buf;
   wr32(edi, 0x656e694c); edi += 4;
@@ -192,7 +219,7 @@ HP.fn_231ca = function () {
     wr16(edi, a); wr16(edi + 2, a + 1); wr16(edi + 4, a); wr16(edi + 6, a + 0x10); edi += 8;
   }
   wr32(edi, 0);
-  HP.fn_29060(1, 0x101, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
+  buildObject(1, 0x101, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
   wr32(0x220ac, 0);
   // 'Obu!' object: the triangle mesh [0x220e0] (faces stride 0x30 with 3 vertex pointers) relative to [0x220b0..]
   edi = buf;
@@ -213,30 +240,30 @@ HP.fn_231ca = function () {
   wr16(edi, nf); edi += 2;
   for (let a = nf, bx = 0; a > 0; a--) { wr16(edi, bx); bx++; wr16(edi + 2, bx); bx++; wr16(edi + 4, bx); bx++; edi += 6; }
   wr32(edi, 0);
-  HP.fn_29060(1, 9, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
+  buildObject(1, 9, 0, 0xffffffff, rd32(0x21dac), buf, 0x21dbc);
   wr32(0x21e28, 1); wr32(0x21de4, 1);
   wr32(0x21de8, 0x1a); wr32(0x21de9, 0x1a); wr32(0x21dea, 0x28);
   wr32(0x21dec, 0x96); wr32(0x21ded, 0x96); wr32(0x21dee, 0x96);
   HP.fill32(buf, 0, 0x25800);
-  HP.fn_2a094(0x320, 0x21dbc);
+  objectInit(0x320, 0x21dbc);
   // 800 particle records (16 bytes: t, speed, ring offset, ring size)
-  eax = HP.fn_29a(0x320 * 0x10 + 0x10); eax = (eax | 0xf) + 1; wr32(0x223ac, eax);
+  eax = alloc(0x320 * 0x10 + 0x10); eax = (eax | 0xf) + 1; wr32(0x223ac, eax);
   edi = eax;
   for (let c = 0x320; c > 0; c--) {
-    let r = HP.fn_2c2c8(0x64); wr32(0x21db4, r);
-    const t = r; wr32(0x21db4, 0x64);
+    let r = rand(0x64); wr32(PART.tmpI, r);
+    const t = r; wr32(PART.tmpI, 0x64);
     wrf(edi, t / 100);
-    r = HP.fn_2c2c8(6); wr32(edi + 8, Math.imul(r, 0x28));
+    r = rand(6); wr32(edi + 8, Math.imul(r, 0x28));
     wr32(edi + 0xc, 0xa78);
-    r = HP.fn_2c2c8(0x1388) + 0x64; wr32(0x21db4, r);
-    wr32(0x21db4, 0x30d40);
+    r = rand(0x1388) + 0x64; wr32(PART.tmpI, r);
+    wr32(PART.tmpI, 0x30d40);
     wrf(edi + 4, r / 200000);
     edi += 0x10;
   }
   // 4 rings
-  eax = HP.fn_29a(0x29f0); eax = (eax | 0xf) + 1; wr32(0x228c0, eax);
-  wrf(0x21db4, 0);
-  HP.fill32(eax, rd32(0x21db4), 0xa78);
+  eax = alloc(0x29f0); eax = (eax | 0xf) + 1; wr32(0x228c0, eax);
+  wrf(PART.tmpI, 0);
+  HP.fill32(eax, rd32(PART.tmpI), 0xa78);
   edi = eax;
   wr32(0x228b8, -0xbb8); wr32(0x228bc, 0x10e); edi = HP.fn_23124(-1, edi, 0);
   wr32(0x228b8, -0xbb8); wr32(0x228bc, 0x10e); edi = HP.fn_23124(-1, edi, 4);
@@ -244,29 +271,29 @@ HP.fn_231ca = function () {
   wr32(0x228b8, 0xbb8); wr32(0x228bc, -0x10e); edi = HP.fn_23124(-1, edi, 4);
   HP.fn_28ed8(1, 0x21dbc);
   wr32(0x21e44, rd32(0x223b0)); wr32(0x21e48, rd32(0x223b4)); wr32(0x21e4c, rd32(0x223b8)); wr32(0x21de0, rd32(0x223bc));
-  wr32(0x21db4, 0x80); wrf(0x22240, 128); wrf(0x22244, 128);
+  wr32(PART.tmpI, 0x80); wrf(0x22240, 128); wrf(0x22244, 128);
   {
     let p = rd32(0x2224c);
     for (let c = 0x10000; c > 0; c--, p++) { let v = (M[p] << 1) - 0x14; if (v <= 0) v = 0; M[p] = v & 0xff; }
   }
-  wrf(0x22228, 1); wr32(0x21db4, 0xff); wrf(0x2222c, 255);
+  wrf(0x22228, 1); wr32(PART.tmpI, 0xff); wrf(0x2222c, 255);
   {
     let p = rd32(0x22234);
     for (let i = 0; i < 0x100; i++, p += 0x100) M.fill(i >>> 2, p, p + 0x100);
   }
   HP.fn_22d30();
-  wr32(0x21db4, 0x40); wrf(0x22210, 64); wrf(0x22214, 64);
+  wr32(PART.tmpI, 0x40); wrf(0x22210, 64); wrf(0x22214, 64);
 };
 
 // build the 256-entry BGRx palette at 0x29090 with component scales (r=red scale, g=green, b=blue)
 function palette(r, g, b) {
-  wr32(0x228e4, 0x100); wrf(0x228e4, 1 / 256);
-  const d = rdf(0x228e4);
+  wr32(PART.tmpI2, 0x100); wrf(PART.tmpI2, 1 / 256);
+  const d = rdf(PART.tmpI2);
   let v = 0, edi = 0x29090;
   for (let c = 0x100; c > 0; c--, edi += 4) {
-    wr32(0x21db4, r); let t = rint(r * v); wr32(0x21db4, t); wr8(edi + 2, t);
-    wr32(0x21db4, g); t = rint(g * v); wr32(0x21db4, t); wr8(edi + 1, t);
-    wr32(0x21db4, b); t = rint(b * v); wr32(0x21db4, t); wr8(edi, t);
+    wr32(PART.tmpI, r); let t = rint(r * v); wr32(PART.tmpI, t); wr8(edi + 2, t);
+    wr32(PART.tmpI, g); t = rint(g * v); wr32(PART.tmpI, t); wr8(edi + 1, t);
+    wr32(PART.tmpI, b); t = rint(b * v); wr32(PART.tmpI, t); wr8(edi, t);
     v = v + d;
   }
 }
@@ -278,7 +305,7 @@ HP.fn_236ef = function* (eax) {
   wr32(0x21d94, eax | 0);
   { let p = rd32(0x28e5c); for (let c = 0x20000; c > 0; c--, p++) M[p] >>= 1; }
   HP.copy(0x2285d, 0x2285d - 0x28, 0x28);
-  let esi = rd32(0xe20);
+  let esi = rd32(ADDR.playerState);
   const order0 = rd32(esi + 0x30);
   wr32(0x21d98, order0);
   wr32(0x22404, ((order0 - 1) >>> 1));
@@ -288,22 +315,22 @@ HP.fn_236ef = function* (eax) {
     wr32(0x223a0, rd32(s * 4 + 0x2241c)); wr32(0x223a8, rd32(s * 4 + 0x22408));
     wr32(0x223a4, 0); wrf(0x2239c, 0);
   }
-  wr32(0x2ee54, 0);
+  wr32(ADDR.timerMs, 0);
   palette(0x28, 0x1e, 0x1e);
   // working copy of the mesh vertices
   eax = Math.imul(rd32(0x2214c), 0x3c);
   const ndw = eax >>> 2;
-  let p = HP.fn_29a(eax + 0x10); p = (p | 0xf) + 1; wr32(0x228b0, p);
+  let p = alloc(eax + 0x10); p = (p | 0xf) + 1; wr32(0x228b0, p);
   HP.copy(p, rd32(0x22154), ndw * 4);
-  wr32(0x22888, 0); wr32(0x2288c, 0);
+  wr32(PART.state, 0); wr32(PART.subState, 0);
   for (;;) {
     HP.fill32(rd32(0x21da0), rd32(rd32(0x22220)), 0x12c00);
     wr32(0x220e8, rd32(0x220e8) & 0x3ffe);
-    esi = rd32(0xe20);
+    esi = rd32(ADDR.playerState);
     const ord = rds32(esi + 0x30), row = rds32(esi + 0x34);
-    if (ord >= 0x1f && (ord > 0x1f || row >= 0x30) && rd8(0xa01) !== 1) {
-      if (rds32(0x22888) <= 4) {
-        const r = HP.fn_2c2c8(8);
+    if (ord >= 0x1f && (ord > 0x1f || row >= 0x30) && rd8(ADDR.keyPause) !== 1) {
+      if (rds32(PART.state) <= 4) {
+        const r = rand(8);
         wr32(0x220e8, rd32(0x220e8) & 0x3ffe);
         if (r === 3) wr32(0x220e8, rd32(0x220e8) | 1);
       } else wr32(0x220e8, rd32(0x220e8) | 1);
@@ -311,7 +338,7 @@ HP.fn_236ef = function* (eax) {
     // displace the mesh vertices along the (paired) face normals by [0x228a0]
     {
       let src = rd32(0x228b0), nrm = rd32(0x22158), dst = rd32(0x22154), ebp = nrm;
-      const k = rdf(0x228a0), kz = rdf(0x228b4);
+      const k = rdf(PART.displace), kz = rdf(0x228b4);
       let par = 0;
       for (let n = rds32(0x22150); n > 0; n--) {
         par = (par + 1) & 1;
@@ -335,7 +362,7 @@ HP.fn_236ef = function* (eax) {
           wr32(0x28c9c, 0);
           HP.fn_28ca4(rec, 3, ring + 0x18);           // (ebx=record, ecx=3, edi=ring points); esi=ring, ebp=ring# unused by the callee
           wr32(vtx + 4, rd32(0x28c74)); wr32(vtx + 8, rd32(0x28c78)); wr32(vtx + 0xc, rd32(0x28c7c));
-          wr32(0x21db4, -0x2d); wrf(vtx + 0x20, -45);
+          wr32(PART.tmpI, -0x2d); wrf(vtx + 0x20, -45);
           rec += 0x10; vtx += 0x2c;
         }
         ring += 0xa78;
@@ -344,19 +371,19 @@ HP.fn_236ef = function* (eax) {
     }
     wr32(0x28c9c, 1);
     if (rds32(0x22400) === 4) wr32(0x28c9c, 0);
-    HP.fn_2afd3(0x2239c, 0x222d4, rd32(rd32(0x22400) * 4 + 0x22430), 0x21dbc);   // (ebx, esi, edi=path, ebp)
+    cameraFromSpline(0x2239c, 0x222d4, rd32(rd32(0x22400) * 4 + 0x22430), 0x21dbc);   // (ebx, esi, edi=path, ebp)
     HP.fn_1570b(0x223c4, 0x222d4);
     wr32(0x21e2c, rd32(0x222d4)); wr32(0x21e30, rd32(0x222d8)); wr32(0x21e34, rd32(0x222dc));
     wr32(0x21e38, rd32(0x222e0)); wr32(0x21e3c, rd32(0x222e4)); wr32(0x21e40, rd32(0x222e8));
-    HP.fn_2a2ac(0x222d4, 0x21dbc, rd32(0x21da0));                               // (esi, ebp, edi) — engine signature order
-    if (rds32(0x22890) !== 0) HP.fn_22e68();
-    HP.fn_2b0a8(rd32(0x21da0), 0x21dbc);                                        // (esi, ebp) present
+    renderObject(0x222d4, 0x21dbc, rd32(0x21da0));                               // (esi, ebp, edi) — engine signature order
+    if (rds32(PART.lightOn) !== 0) HP.fn_22e68();
+    present(rd32(0x21da0), 0x21dbc);                                        // (esi, ebp) present
     yield;
     wr32(0x21d9c, 2);
-    let n = Math.trunc((rds32(0x28e28) + 1) / 0xe);
+    let n = Math.trunc((rds32(ADDR.frameMs) + 1) / 0xe);
     for (; n > 0; n--) HP.fn_23bd0();
-    if (rd8(0x9c9) === 1) { wr32(0x1084, 1); break; }
-    if (rds32(0x22888) < 5) continue;
+    if (rd8(ADDR.keyEsc) === 1) { wr32(ADDR.partExit, 1); break; }
+    if (rds32(PART.state) < 5) continue;
     if (rds32(0x223a4) < rds32(0x22418) - 0xc8) continue;
     break;
   }
@@ -368,15 +395,15 @@ HP.fn_236ef = function* (eax) {
 
 // fn_23bd0: one update step (14 ms)
 HP.fn_23bd0 = function () {
-  if (rd8(0xa01) === 1) return;
-  HP.fn_2af3a();
-  HP.fn_2b037(0x2239c, rd32(0x21dac));
+  if (rd8(ADDR.keyPause) === 1) return;
+  stirRng();
+  splineAdvance(0x2239c, rd32(0x21dac));
   {
     let rec = rd32(0x223ac);
-    for (let c = 0x320; c > 0; c--, rec += 0x10) HP.fn_2b037(rec, rd32(0x21dac));
+    for (let c = 0x320; c > 0; c--, rec += 0x10) splineAdvance(rec, rd32(0x21dac));
   }
   if (rds32(0x22400) !== 4) {
-    const esi = rd32(0xe20);
+    const esi = rd32(ADDR.playerState);
     const e = ((rds32(esi + 0x30) - 1) >>> 1);
     if (e !== rd32(0x22404)) {
       wr32(0x22404, e);
@@ -392,53 +419,53 @@ HP.fn_23bd0 = function () {
   wrf(0x223e4, rdf(0x223e4) + rdf(0x223f0));
   wrf(0x223e8, rdf(0x223e8) + rdf(0x223f4));
   wrf(0x223ec, rdf(0x223ec) + rdf(0x223f8));
-  let esi = rd32(0xe20);
-  if (rds32(esi + 0x30) >= 0x20 && rds32(0x22888) === 0 && rds32(esi + 0x34) >= 2) {
-    wr32(0x22888, 1); wr32(0x220ac, rd32(0x220ac) | 1);
+  let esi = rd32(ADDR.playerState);
+  if (rds32(esi + 0x30) >= 0x20 && rds32(PART.state) === 0 && rds32(esi + 0x34) >= 2) {
+    wr32(PART.state, 1); wr32(0x220ac, rd32(0x220ac) | 1);
   }
-  if (rds32(0x22888) === 1) {
-    wrf(0x228a4, rdf(0x228a4) - rdf(0x228ac));
-    wrf(0x228a0, rdf(0x228a0) + rdf(0x228a4));
+  if (rds32(PART.state) === 1) {
+    wrf(PART.velocity, rdf(PART.velocity) - rdf(0x228ac));
+    wrf(PART.displace, rdf(PART.displace) + rdf(PART.velocity));
   }
-  if (rds32(0x22888) === 1 && rds32(esi + 0x30) >= 0x21) {
-    wr32(0x22888, 2); wr32(0x22890, 1); wr32(0x22894, -0x3e8); wr32(0x2288c, 1);
+  if (rds32(PART.state) === 1 && rds32(esi + 0x30) >= 0x21) {
+    wr32(PART.state, 2); wr32(PART.lightOn, 1); wr32(PART.lightDist, -0x3e8); wr32(PART.subState, 1);
   }
-  if (rds32(0x22888) === 2) {
-    wrf(0x228a4, rdf(0x228a4) + rdf(0x228a8));
-    wrf(0x228a0, rdf(0x228a0) + rdf(0x228a4));
+  if (rds32(PART.state) === 2) {
+    wrf(PART.velocity, rdf(PART.velocity) + rdf(0x228a8));
+    wrf(PART.displace, rdf(PART.displace) + rdf(PART.velocity));
   }
-  if (rds32(0x2288c) === 1) {
-    wr32(0x22894, rds32(0x22894) + 0xf);
-    if (rds32(0x22894) >= 0x578) wr32(0x22894, 0x578);
+  if (rds32(PART.subState) === 1) {
+    wr32(PART.lightDist, rds32(PART.lightDist) + 0xf);
+    if (rds32(PART.lightDist) >= 0x578) wr32(PART.lightDist, 0x578);
   }
-  if (rds32(0x2288c) === 2) {
-    wr32(0x22894, rds32(0x22894) - 6);
-    if (rds32(0x22894) <= -0x7d0) { wr32(0x22894, -0x7d0); wr32(0x22890, 0); }
+  if (rds32(PART.subState) === 2) {
+    wr32(PART.lightDist, rds32(PART.lightDist) - 6);
+    if (rds32(PART.lightDist) <= -0x7d0) { wr32(PART.lightDist, -0x7d0); wr32(PART.lightOn, 0); }
   }
-  esi = rd32(0xe20);
-  if (rds32(esi + 0x34) >= 0x34) wr32(0x2288c, 2);
-  if (rds32(0x22888) === 2) {
-    esi = rd32(0xe20);
-    if (rds32(esi + 0x34) >= 0x12) wr32(0x22888, 3);
+  esi = rd32(ADDR.playerState);
+  if (rds32(esi + 0x34) >= 0x34) wr32(PART.subState, 2);
+  if (rds32(PART.state) === 2) {
+    esi = rd32(ADDR.playerState);
+    if (rds32(esi + 0x34) >= 0x12) wr32(PART.state, 3);
   }
-  if (rds32(0x22888) === 3) {
-    wrf(0x228a4, rdf(0x228a4) * rdf(0x2289c));
-    wrf(0x228a0, rdf(0x228a0) + rdf(0x228a4));
+  if (rds32(PART.state) === 3) {
+    wrf(PART.velocity, rdf(PART.velocity) * rdf(0x2289c));
+    wrf(PART.displace, rdf(PART.displace) + rdf(PART.velocity));
   }
-  if (rds32(0x22888) === 3) {
-    esi = rd32(0xe20);
-    if (rds32(esi + 0x30) >= 0x23 && rds32(esi + 0x34) >= 4) wr32(0x22888, 4);
+  if (rds32(PART.state) === 3) {
+    esi = rd32(ADDR.playerState);
+    if (rds32(esi + 0x30) >= 0x23 && rds32(esi + 0x34) >= 4) wr32(PART.state, 4);
   }
-  if (rds32(0x22888) === 4) {
-    if (rd32(0x228a0) & 0x80000000) {
+  if (rds32(PART.state) === 4) {
+    if (rd32(PART.displace) & 0x80000000) {
       for (let i = 0, a = 0; i < 0xb; i++, a += 0x3c) wr32(a + 0x21e54, rd32(a + 0x21e54) & 0x7fe);
       wr32(0x223a0, rd32(0x22448));
-      wrf(0x228a0, 0);
+      wrf(PART.displace, 0);
       wr32(0x21e24, 0);
-      wr32(0x22888, 5);
+      wr32(PART.state, 5);
     } else {
-      wrf(0x228a4, rdf(0x228a4) - rdf(0x228a8));
-      wrf(0x228a0, rdf(0x228a0) + rdf(0x228a4));
+      wrf(PART.velocity, rdf(PART.velocity) - rdf(0x228a8));
+      wrf(PART.displace, rdf(PART.displace) + rdf(PART.velocity));
     }
   }
   if (rds32(0x223d0) !== 5) {
@@ -457,7 +484,7 @@ HP.fn_23bd0 = function () {
 // fn_23f34: 1/sqrt table (0x2000 dwords) at [0x23f30], indexed by mantissa bits; [table+0x4000] = 0x7ff800
 HP.fn_23f34 = HP.fn_23f34 || function () {
   const dv = HP.DV;
-  let eax = HP.fn_29a(0x8010); eax = (eax | 0xf) + 1; wr32(0x23f30, eax);
+  let eax = alloc(0x8010); eax = (eax | 0xf) + 1; wr32(0x23f30, eax);
   let edi = eax;
   const tmp = new DataView(new ArrayBuffer(4));
   for (let i = 0; i < 0x2000; i++, edi += 4) {
@@ -511,11 +538,11 @@ HP.fn_24018 = HP.fn_24018 || function (ebp) {
     wrfn(0x28e80, (dx - bx) * (sy - by) - (sx - bx) * (dy - by));
     const nx = rdf(0x28e78), ny = rdf(0x28e7c), nz = rdf(0x28e80);
     wrfn(0x28e40, (nx * nx + ny * ny) + nz * nz);
-    const rs = HP.fn_23f8c(rd32(0x28e40));
-    wr32(0x28e40, rs);
+    const rs = invSqrt(rd32(ADDR.tmpF));
+    wr32(ADDR.tmpF, rs);
     tmp.setUint32(0, rs, true);
     const r = tmp.getFloat32(0, true);
-    wr32(0x28e40, 0xff);
+    wr32(ADDR.tmpF, 0xff);
     const r255 = r * 255;
     let t = nx * r255; wrfn(fc + 0x18, t);
     wrfn(b + 0x20, t + rdf(b + 0x20)); wrfn(d + 0x20, t + rdf(d + 0x20)); wrfn(s + 0x20, t + rdf(s + 0x20));
@@ -535,7 +562,7 @@ HP.fn_24018 = HP.fn_24018 || function (ebp) {
 // fn_241be(ebp): bounding box -> center in ebp+8..+0x10 ((min+max)/[0x28e68]), vertices re-centered
 HP.fn_241be = HP.fn_241be || function (ebp) {
   let v = rd32(ebp + 0x34), n = rds32(ebp + 0x2c);
-  wr32(0x23fb8, rd32(v + 4)); wr32(0x23fbc, rd32(v + 4));
+  wr32(ADDR.bboxMinX, rd32(v + 4)); wr32(0x23fbc, rd32(v + 4));
   wr32(0x23fc0, rd32(v + 8)); wr32(0x23fc4, rd32(v + 8));
   wr32(0x23fc8, rd32(v + 0xc)); wr32(0x23fcc, rd32(v + 0xc));
   for (let i = n; i > 0; i--, v += 0x3c) {
@@ -546,8 +573,8 @@ HP.fn_241be = HP.fn_241be || function (ebp) {
       if (!(rdf(lo) <= val)) wrfn(lo, val);    // jbe skips when cur <= val
     }
   }
-  const div = rdf(0x28e68);
-  wrfn(ebp + 8, (rdf(0x23fb8) + rdf(0x23fbc)) / div);
+  const div = rdf(ADDR.const2);
+  wrfn(ebp + 8, (rdf(ADDR.bboxMinX) + rdf(0x23fbc)) / div);
   wrfn(ebp + 0xc, (rdf(0x23fc0) + rdf(0x23fc4)) / div);
   wrfn(ebp + 0x10, (rdf(0x23fc8) + rdf(0x23fcc)) / div);
   v = rd32(ebp + 0x34);
@@ -564,14 +591,14 @@ HP.fn_242e3 = HP.fn_242e3 || function (ebp) {
   for (let i = rds32(ebp + 0x2c); i > 0; i--, v += 0x3c) {
     const x = rdf(v + 4), y = rdf(v + 8), z = rdf(v + 0xc);
     const l = (z * z + y * y) + x * x;      // fld x; fmul; fld y; fmul; fld z; fmul; faddp; faddp -> (z²+y²)+x²
-    if (!(rdf(0x23fb8) >= l)) wrfn(0x23fb8, l);
+    if (!(rdf(ADDR.bboxMinX) >= l)) wrfn(0x23fb8, l);
   }
-  wrfn(ebp + 0x20, Math.sqrt(rdf(0x23fb8)));
+  wrfn(ebp + 0x20, Math.sqrt(rdf(ADDR.bboxMinX)));
 };
 // fn_2432c(edx, ebp): allocate builder tables, copy a 13-byte name from edx to 0x2436b, [ebp+0x5c]++, fn_2438e
 HP.fn_2432c = HP.fn_2432c || function (edx, ebp) {
-  let eax = HP.fn_29a(0x310); eax = (eax | 0xf) + 1; wr32(0x24382, eax);
-  eax = HP.fn_29a(0x60000); eax = ((eax | 0xffff) + 1) >>> 0; wr32(0x24386, eax);
+  let eax = alloc(0x310); eax = (eax | 0xf) + 1; wr32(0x24382, eax);
+  eax = alloc(0x60000); eax = ((eax | 0xffff) + 1) >>> 0; wr32(0x24386, eax);
   HP.copy(0x2436b, edx, 0xd);
   wr32(ebp + 0x5c, rd32(ebp + 0x5c) + 1);
   return HP.fn_2438e(ebp);

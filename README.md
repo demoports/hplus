@@ -1,6 +1,6 @@
 # hplus (browser port)
 
-A JavaScript port of **halcyon(+)hplus** by Halcyon (64k intro, The Party 1998), reconstructed
+A JavaScript port of **hplus** by halcyon (64k intro, The Party 1998), reconstructed
 by unpacking and disassembling `HPLUS.EXE`. The .nfo credits the intro to blitz, ren, shrine, ember,
 placidity and croaker, with brothomstates (music) and the module player by digisnap / matrix.
 
@@ -10,6 +10,7 @@ Files:
 |---|---|
 | `index.html` | launcher (over a frame of the intro rendered live by the port) · the 320×240 image is fitted to the window with whole pixels (no smoothing) · `space` pauses · `←` / `→` skip 5 s · `f` fullscreen · `` ` `` the original's fps overlay · `esc` stops |
 | `hplus.js` | browser glue: the frame loop (real time fed to the original's 1 kHz timer / per-frame ms counter), WebAudio streaming of the player with the song position taken from the audio clock, keyboard |
+| `hplus_addr.js` | names for the original's globals that have been identified — `rd32(ADDR.playerState)` instead of `rd32(0xe20)`; unnamed addresses stay hex literals |
 | `hplus_core.js` | the "memory image" (one `Uint8Array` mirroring the original's 32-bit segment and heap), PMODE allocators, RNG, integer/x87 helpers, the timer-callback scheduler |
 | `hplus_engine.js` | the 3D engine: object loader (chunk format), textures/shade tables, transforms, clipping, polygon/line/particle rasterizers, camera splines, present + fps overlay |
 | `hplus_player.js` | the module player (loader, XM-style tick/effects, envelopes, the SB16 mixer) |
@@ -17,7 +18,7 @@ Files:
 | `hplus_fxA.js` … `hplus_fxF.js` | the six parts of the intro |
 | `hplus_main.js` | startup (table building, module decryption, precalcs), the part sequencer, the object loader's data-stream callback |
 | `hplus_data.js` | the intro's data (the WWPACK-unpacked 32-bit image of `HPLUS.EXE`), gzip + base64 — the page needs no DOS exe or unpacker at runtime |
-| `notes/` | conventions of the port and the reverse-engineering notes of each subsystem (engine, player, parts B–F) |
+| `notes/` | **start with [`notes/READING_ORDER.md`](notes/READING_ORDER.md)** — then the conventions of the port and the reverse-engineering notes of each subsystem (engine, player, parts B–F) |
 | `tools/` | the unpacker/disassembler/emulator/validation scripts (Python + Unicorn/Capstone, node) |
 
 The sources are ES modules (`index.html` imports `hplus.js`, which pulls in the rest), so the page has to be

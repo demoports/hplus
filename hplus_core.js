@@ -1,6 +1,12 @@
 // hplus port — core: memory image, access helpers, PMODE allocators, RNG, integer/x87 helpers.
 // Plain JS, usable in the browser and in node.  Every other module imports this HP namespace
 // and hangs its own functions off it, so the emulated code's cross-calls stay late-bound.
+import { ADDR } from './hplus_addr.js';
+
+// functions this file calls from elsewhere (forwarding, so the HP entry stays late-bound
+// and tools/replay.js can still swap it at runtime)
+const masterVolume = (...a) => HP.fn_2cf9a(...a);   // sound: fn_2cf9a
+
 export const HP = {};
 
 // ---------------------------------------------------------------- memory
@@ -106,10 +112,10 @@ Object.assign(HP, { roundHalfEven, fround, truncInt });
 
 // ---------------------------------------------------------------- RNG  fn_2c2c8(eax=range) -> eax
 HP.fn_2c2c8 = function (range) {
-  let s1 = rd32(0x28e38), s2 = rd32(0x28e3c);
+  let s1 = rd32(ADDR.rngS1), s2 = rd32(ADDR.rngS2);
   let t = (rol((s1 + s2) >>> 0, 5) + 0x09381277) >>> 0;
   s2 = ror((s2 + 0x82093847) >>> 0, 8);
-  wr32(0x28e38, t); wr32(0x28e3c, s2);
+  wr32(ADDR.rngS1, t); wr32(ADDR.rngS2, s2);
   return mulhi(range >>> 0, t);
 };
 HP.rand = HP.fn_2c2c8;
@@ -123,25 +129,25 @@ HP.fn_2ef6e = function (eax, edx) {  // register/alter a timer callback: edx=fn,
 };
 // one 1 kHz tick of the timer IRQ handler (0x2ee64) — the parts that matter in the port
 HP.timerTick = function () {
-  wr32(0x2ee54, rd32(0x2ee54) + 1);
+  wr32(ADDR.timerMs, rd32(ADDR.timerMs) + 1);
   if (rd32(0xe10) !== 0) {                 // nosound: fake song position advance (not used with sound)
     wr32(0x2ee50, rd32(0x2ee50) + 1);
     if (rds32(0x2ee50) >= 0x50) {
       wr32(0x2ee50, 0);
-      const p = rd32(0xe20);
+      const p = rd32(ADDR.playerState);
       wr32(p + 0x34, rd32(p + 0x34) + 1);
       if (rds32(p + 0x34) >= 0x40) { wr32(p + 0x34, 0); wr32(p + 0x30, rd32(p + 0x30) + 1); }
     }
   }
-  if (rd32(0x2ee58) !== 0) {               // [0x2ee58]: effect-driven random "glitch" trigger (see fn_2cf9a)
+  if (rd32(ADDR.glitchLevel) !== 0) {               // [0x2ee58]: effect-driven random "glitch" trigger (see fn_2cf9a)
     wr32(0x2ee5c, rd32(0x2ee5c) + 1);
     if (rd32(0x2ee5c) === 0x1e) {
       wr32(0x2ee5c, 0);
       const r = HP.fn_2c2c8(0x400);
       wr32(0x2ee60, 0x400);
       let ebx = 0xc;
-      if (r < rds32(0x2ee58)) { ebx = 0; wr32(0x2ee60, 0); }
-      if (rd32(0xe10) === 0 && HP.fn_2cf9a) HP.fn_2cf9a(ebx);
+      if (r < rds32(ADDR.glitchLevel)) { ebx = 0; wr32(0x2ee60, 0); }
+      if (rd32(0xe10) === 0 && HP.fn_2cf9a) masterVolume(ebx);
     }
   }
   for (let i = 3; i >= 0; i--) {
