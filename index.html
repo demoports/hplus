@@ -28,10 +28,11 @@
   #ui .row { margin-top: 38px; display: flex; gap: 12px; align-items: center; }
   #ui button {
     font: inherit; letter-spacing: .18em; text-transform: uppercase; cursor: pointer; outline: none;
-    color: #cdd9ee; background: none; border: none; padding: 6px 2px;
-    text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 1px;
+    color: #cdd9ee; background: transparent; border: none; padding: 6px 2px;
+    text-decoration: underline; text-underline-offset: 7px; text-decoration-thickness: 1px;
     transition: color .2s; }
-  #ui button:hover, #ui button:focus-visible { color: #fff; }
+  #ui button:not(:disabled):hover, #ui button:not(:disabled):focus-visible { color: #fff; }
+  #ui button:disabled { color: #6d86a6; cursor: progress; text-decoration: none; }
   #ui .controls { position: absolute; bottom: 22px; color: #4f6784; font-size: 11px; letter-spacing: .14em; text-align: center; white-space: nowrap; }
   #ui .controls kbd { color: #9fb6d4; font: inherit; }
   #ui .controls a { display: inline-block; margin-top: 10px; color: #6d86a6; text-decoration: none; transition: color .2s; }
