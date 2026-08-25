@@ -32,8 +32,10 @@
     text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 1px;
     transition: color .2s; }
   #ui button:hover, #ui button:focus-visible { color: #fff; }
-  #ui .keys { position: absolute; bottom: 22px; color: #4f6784; font-size: 11px; letter-spacing: .2em; text-decoration: none; transition: color .2s; }
-  #ui .keys:hover { color: #9fb6d4; }
+  #ui .controls { position: absolute; bottom: 22px; color: #4f6784; font-size: 11px; letter-spacing: .14em; text-align: center; white-space: nowrap; }
+  #ui .controls kbd { color: #9fb6d4; font: inherit; }
+  #ui .controls a { display: inline-block; margin-top: 10px; color: #6d86a6; text-decoration: none; transition: color .2s; }
+  #ui .controls a:hover, #ui .controls a:focus-visible { color: #9fb6d4; }
   #status { position: absolute; left: 14px; bottom: 12px; color: #567; font: 11px sans-serif; letter-spacing: .1em; }
   #status:empty { display: none; }
 </style>
@@ -46,7 +48,10 @@
   <div class="meta">64k intro · the party 1998</div>
   <div class="credits"><b>blitz</b> · <b>ren</b> · <b>shrine</b> · <b>ember</b> · <b>placidity</b> · <b>croaker</b><br>music <b>brothomstates</b> &nbsp;·&nbsp; player <b>digisnap / matrix</b></div>
   <div class="row"><button id="go" type="button">start</button></div>
-  <a class="keys" href="https://github.com/demoports/hplus" target="_blank" rel="noopener">github</a>
+  <div class="controls">
+    <kbd>space</kbd> pause · <kbd>← →</kbd> seek · <kbd>f</kbd> fullscreen · <kbd>esc</kbd> stop<br>
+    <a href="https://github.com/demoports/hplus" target="_blank" rel="noopener noreferrer">github</a>
+  </div>
 </div>
 <div id="status"></div>
 <script type="module">
