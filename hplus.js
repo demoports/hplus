@@ -43,47 +43,9 @@ function blitTo(ctx2d, imgData, pix, bufOff) {
   for (let i = 0; i < W * H; i++) { const v = M32[i]; pix[i] = 0xff000000 | ((v & 0xff) << 16) | (v & 0xff00) | ((v >>> 16) & 0xff); }
   ctx2d.putImageData(imgData, 0, 0);
 }
-let previewGen = 0;                     // bumping this cancels a running preview
-
-// Render one frame of the intro (the one presented at `seconds` of music, simulated at 25 fps, no audio)
-// into the canvas — the launcher's background. Runs in slices so the page stays responsive.
-HP.preview = function (canvas, seconds, done) {
-  const my = ++previewGen;
-  const ctx2d = canvas.getContext('2d');
-  canvas.width = W; canvas.height = H;
-  const imgData = ctx2d.createImageData(W, H), pix = new Uint32Array(imgData.data.buffer);
-  let last = null;
-  loadData().then((data) => {
-    if (my !== previewGen) return;
-    HP.init(data);
-    HP.videoOut = (off) => { last = off; };
-    HP.fn_2c1e6 = () => {}; HP.onPartEntry = null;
-    return new Promise(r => setTimeout(r, 30));
-  }).then(() => {
-    if (my !== previewGen) return;
-    HP.mainInit({});
-    const player = HP.player, seq = HP.mainSequence();
-    seq.next();
-    const step = () => {
-      if (my !== previewGen) return;
-      const t0 = performance.now();
-      while (performance.now() - t0 < 25) {
-        if (player.position().frames / RATE >= seconds) { finish(); return; }
-        for (let k = 0; k < 40; k++) HP.timerTick();
-        player.render(new Int16Array(1764 * 2), 1764);   // 40 ms of music, in lockstep
-        setSongPosition(player.position());
-        if (seq.next().done) { finish(); return; }
-      }
-      setTimeout(step, 0);
-    };
-    const finish = () => { if (last != null) blitTo(ctx2d, imgData, pix, last); if (done) done(); };
-    step();
-  }).catch((e) => console.error(e));
-};
 
 HP.start = function (canvas, setStatus, opts) {
   opts = opts || {};
-  previewGen++;                         // cancel a running preview: from here on the memory image is ours
   const ctx2d = canvas.getContext('2d');
   canvas.width = W; canvas.height = H;
   const imgData = ctx2d.createImageData(W, H);

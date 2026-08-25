@@ -8,7 +8,8 @@ Files:
 
 | file | what |
 |---|---|
-| `index.html` | launcher (over a frame of the intro rendered live by the port) · the 320×240 image is fitted to the window with whole pixels (no smoothing) · `space` pauses · `←` / `→` skip 5 s · `f` fullscreen · `` ` `` the original's fps overlay · `esc` stops |
+| `index.html` | launcher over a static frame of the intro · the 320×240 image is fitted to the window with whole pixels (no smoothing) · `space` pauses · `←` / `→` skip 5 s · `f` fullscreen · `` ` `` the original's fps overlay · `esc` stops |
+| `launcher.png` | native-resolution still used as the responsive launcher backdrop |
 | `hplus.js` | browser glue: the frame loop (real time fed to the original's 1 kHz timer / per-frame ms counter), WebAudio streaming of the player with the song position taken from the audio clock, keyboard |
 | `hplus_addr.js` | names for the original's globals that have been identified — `rd32(ADDR.playerState)` instead of `rd32(0xe20)`; unnamed addresses stay hex literals |
 | `hplus_core.js` | the "memory image" (one `Uint8Array` mirroring the original's 32-bit segment and heap), PMODE allocators, RNG, integer/x87 helpers, the timer-callback scheduler |

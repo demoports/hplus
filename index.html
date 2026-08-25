@@ -10,12 +10,14 @@
   /* the intro renders 320x240; it is fitted to the window with whole pixels (no smoothing) */
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block;
            image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity .8s ease; }
-  /* launcher background: fill the height, keep the 4:3 aspect, centered (crops the sides on narrow windows) */
-  canvas.bg { inset: auto; top: 0; left: 50%; height: 100%; width: auto; transform: translateX(-50%); }
   #ui { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
         justify-content: center; user-select: none; color: #bcd;
         font: 13px/1.7 sans-serif; letter-spacing: .06em;
-        background: radial-gradient(ellipse at center, rgba(0,0,0,.6) 0%, rgba(0,0,0,.85) 65%, rgba(0,0,0,.96) 100%);
+        background-color: #000;
+        background-image: radial-gradient(ellipse at center, rgba(0,0,0,.6) 0%, rgba(0,0,0,.85) 65%, rgba(0,0,0,.96) 100%),
+                          url("launcher.png");
+        background-position: center; background-repeat: no-repeat; background-size: cover;
+        image-rendering: pixelated; image-rendering: crisp-edges;
         transition: opacity .6s ease; }
   #ui.hidden { opacity: 0; pointer-events: none; }
   #ui h1 { margin: 0; font-weight: 300; font-size: clamp(48px, 9vw, 120px); line-height: 1; letter-spacing: .08em; color: #fff; }
@@ -59,17 +61,14 @@
   window.HP = HP;
   Object.defineProperty(window, 'app', { get: () => app });
 
-  // launcher background: a frame of the intro (part A, ~21 s into the music), rendered live by the port
   function showLauncher() {
     ui.classList.remove('hidden');
-    canvas.classList.add('bg');
-    HP.preview(canvas, 21, () => { if (!app) canvas.style.opacity = '1'; });
+    canvas.style.opacity = '0';
   }
 
   function begin() {
     if (app) return;
     ui.classList.add('hidden');
-    canvas.classList.remove('bg');
     const q = new URLSearchParams(location.search);   // ?fps=60 display cap, ?dfps=30 frame rate of the tunnel part
     app = HP.start(canvas, setStatus, {
       maxFps: +q.get('fps') || 60, dFps: +q.get('dfps') || 30,
