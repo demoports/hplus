@@ -92,7 +92,7 @@
   async function lockScreen() { if (!('wakeLock' in navigator)) return; try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch (e) { wakeLock = null; } }
   function unlockScreen() { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } }
   document.addEventListener('visibilitychange', () => { if (app && document.visibilityState === 'visible' && !wakeLock) lockScreen(); });
-  document.getElementById('go').addEventListener('click', begin);   // only the start button starts (or Enter / Space)
+  document.getElementById('go').addEventListener('click', begin);   // the start button or Space starts
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') stop();
     if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && app) {
@@ -100,7 +100,7 @@
       const t = app.seek(e.key === 'ArrowLeft' ? -5 : 5);
       flash((e.key === 'ArrowLeft' ? '◀ ' : '▶ ') + mmss(t));
     }
-    if ((e.key === 'Enter' || e.key === ' ') && !app) { e.preventDefault(); begin(); }
+    if (e.key === ' ' && !app) { e.preventDefault(); begin(); }
     else if (e.key === ' ' && app) { e.preventDefault(); app.pause(); }
     if (e.key === 'f' && document.fullscreenEnabled) { if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
     if (e.key === '`' && app) app.fps();
